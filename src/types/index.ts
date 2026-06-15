@@ -37,4 +37,5 @@ export interface RankingEntry {
   predictions_count: number;
   acertos_count: number;
   aproveitamento: number;
+  rank_position?: number;
 }

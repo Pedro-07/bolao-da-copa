@@ -54,7 +54,12 @@ function LoginForm() {
           if (error) {
             setStatusMessage({ type: 'error', text: 'Apelido ou senha incorretos.' });
           } else {
-            router.push('/palpites');
+            const pendingRoomId = localStorage.getItem('pending_room_id');
+            if (pendingRoomId) {
+              router.push(`/salas/join/${pendingRoomId}`);
+            } else {
+              router.push('/palpites');
+            }
             router.refresh();
           }
         } else {
@@ -72,7 +77,12 @@ function LoginForm() {
           });
 
           if (!signInError) {
-            router.push('/palpites');
+            const pendingRoomId = localStorage.getItem('pending_room_id');
+            if (pendingRoomId) {
+              router.push(`/salas/join/${pendingRoomId}`);
+            } else {
+              router.push('/palpites');
+            }
             router.refresh();
           } else {
             setStatusMessage({ type: 'success', text: 'Conta criada! Agora entre com seu apelido e senha.' });

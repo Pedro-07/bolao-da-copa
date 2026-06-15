@@ -21,7 +21,10 @@ export default async function PalpitesPage() {
     .select('*')
     .order('match_time', { ascending: true });
 
-  const matches: Match[] = matchesData || [];
+  // Filtrar apenas partidas que ainda não começaram
+  const matches: Match[] = (matchesData || []).filter(
+    (m) => new Date(m.match_time) > new Date()
+  );
 
   // 3. Buscar palpites cadastrados do usuário
   const { data: predictionsData } = await supabase

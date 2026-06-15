@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { RankingEntry } from '@/types';
-import { Medal, Trophy } from '@phosphor-icons/react';
+import { Medal, Trophy, MagnifyingGlass } from '@phosphor-icons/react';
 
 interface RankingTableProps {
   ranking: RankingEntry[];
@@ -27,6 +27,8 @@ const getAvatarStyle = (name: string) => {
 };
 
 export default function RankingTable({ ranking, currentUserId, totalMatches }: RankingTableProps) {
+  const [searchTerm, setSearchTerm] = useState('');
+
   if (ranking.length === 0) {
     return (
       <div className="w-full bg-card border border-border-custom rounded-2xl p-8 text-center text-secondary">
@@ -35,18 +37,37 @@ export default function RankingTable({ ranking, currentUserId, totalMatches }: R
     );
   }
 
+  const filteredRanking = ranking.filter((entry) =>
+    entry.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="w-full bg-card border border-border-custom rounded-2xl overflow-hidden shadow-2xl transition-all duration-300">
-      <div className="px-5 py-4 border-b border-border-custom/60 bg-muted/40 flex items-center justify-between">
+      {/* Header do Ranking com Busca */}
+      <div className="px-5 py-4 border-b border-border-custom/60 bg-muted/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h3 className="text-xs sm:text-sm font-extrabold text-primary flex items-center gap-2 uppercase tracking-wider select-none">
           <Trophy size={18} className="text-accent-custom shrink-0" />
           Classificação Geral
         </h3>
-        {totalMatches !== undefined && (
-          <span className="text-[9px] text-secondary font-black uppercase tracking-wider select-none shrink-0">
-            {totalMatches} Jogos
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <div className="relative w-full sm:w-48 md:w-64">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-secondary">
+              <MagnifyingGlass size={14} />
+            </span>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar participante..."
+              className="w-full h-8 pl-8 pr-3 bg-base border border-border-custom focus:border-accent-custom text-primary text-xs rounded-lg focus:outline-none transition-colors"
+            />
+          </div>
+          {totalMatches !== undefined && (
+            <span className="text-[9px] text-secondary font-black uppercase tracking-wider select-none shrink-0">
+              {totalMatches} Jogos
+            </span>
+          )}
+        </div>
       </div>
       
       <div className="overflow-x-hidden">
@@ -63,121 +84,131 @@ export default function RankingTable({ ranking, currentUserId, totalMatches }: R
             </tr>
           </thead>
           <tbody className="divide-y divide-border-custom/30">
-            {ranking.map((entry, index) => {
-              const pos = index + 1;
-              const isCurrentUser = currentUserId === entry.user_id;
-              const avatarStyle = getAvatarStyle(entry.name);
+            {filteredRanking.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="py-8 text-center text-xs text-secondary font-bold">
+                  Nenhum participante encontrado.
+                </td>
+              </tr>
+            ) : (
+              filteredRanking.map((entry) => {
+                // Procuramos o índice correto no ranking original para manter a posição correta
+                const originalIndex = ranking.findIndex((item) => item.user_id === entry.user_id);
+                const pos = originalIndex !== -1 ? originalIndex + 1 : 0;
+                const isCurrentUser = currentUserId === entry.user_id;
+                const avatarStyle = getAvatarStyle(entry.name);
 
-              // Top 3 premium badges
-              let rankBadge = (
-                <span className="w-7 h-7 flex items-center justify-center rounded-lg bg-muted text-secondary font-extrabold text-xs border border-border-custom/50">
-                  {pos}
-                </span>
-              );
+                // Top 3 premium badges
+                let rankBadge = (
+                  <span className="w-7 h-7 flex items-center justify-center rounded-lg bg-muted text-secondary font-extrabold text-xs border border-border-custom/50">
+                    {pos}
+                  </span>
+                );
 
-              if (pos === 1) {
-                rankBadge = (
-                  <div className="relative w-8 h-8 flex items-center justify-center bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-full shadow-md shadow-yellow-500/15 text-slate-950 font-black text-xs border border-yellow-400 select-none animate-pulse shrink-0">
-                    <Medal size={13} weight="fill" className="absolute -top-1 -right-1 text-yellow-100" />
-                    1
-                  </div>
-                );
-              } else if (pos === 2) {
-                rankBadge = (
-                  <div className="relative w-8 h-8 flex items-center justify-center bg-gradient-to-br from-slate-200 to-slate-400 rounded-full shadow-md shadow-slate-300/15 text-slate-950 font-black text-xs border border-slate-300 select-none shrink-0">
-                    <Medal size={13} weight="fill" className="absolute -top-1 -right-1 text-slate-100" />
-                    2
-                  </div>
-                );
-              } else if (pos === 3) {
-                rankBadge = (
-                  <div className="relative w-8 h-8 flex items-center justify-center bg-gradient-to-br from-amber-500 to-amber-700 rounded-full shadow-md shadow-amber-600/15 text-white font-black text-xs border border-amber-400 select-none shrink-0">
-                    <Medal size={13} weight="fill" className="absolute -top-1 -right-1 text-amber-100" />
-                    3
-                  </div>
-                );
-              }
-
-              return (
-                <tr
-                  key={entry.user_id}
-                  className={`transition-all duration-200 ${
-                    isCurrentUser
-                      ? 'bg-accent-custom/5 dark:bg-accent-custom/5 border-l-4 border-l-accent-custom'
-                      : 'hover:bg-muted/30'
-                  }`}
-                >
-                  {/* Posição */}
-                  <td className="py-3 px-1 text-center">
-                    <div className="flex justify-center">
-                      {rankBadge}
+                if (pos === 1) {
+                  rankBadge = (
+                    <div className="relative w-8 h-8 flex items-center justify-center bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-full shadow-md shadow-yellow-500/15 text-slate-950 font-black text-xs border border-yellow-400 select-none animate-pulse shrink-0">
+                      <Medal size={13} weight="fill" className="absolute -top-1 -right-1 text-yellow-100" />
+                      1
                     </div>
-                  </td>
+                  );
+                } else if (pos === 2) {
+                  rankBadge = (
+                    <div className="relative w-8 h-8 flex items-center justify-center bg-gradient-to-br from-slate-200 to-slate-400 rounded-full shadow-md shadow-slate-300/15 text-slate-950 font-black text-xs border border-slate-300 select-none shrink-0">
+                      <Medal size={13} weight="fill" className="absolute -top-1 -right-1 text-slate-100" />
+                      2
+                    </div>
+                  );
+                } else if (pos === 3) {
+                  rankBadge = (
+                    <div className="relative w-8 h-8 flex items-center justify-center bg-gradient-to-br from-amber-500 to-amber-700 rounded-full shadow-md shadow-amber-600/15 text-white font-black text-xs border border-amber-400 select-none shrink-0">
+                      <Medal size={13} weight="fill" className="absolute -top-1 -right-1 text-amber-100" />
+                      3
+                    </div>
+                  );
+                }
 
-                  {/* Participante (Avatar + Nome + Palpites no Mobile) */}
-                  <td className="py-3 px-2 font-bold text-sm min-w-0">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {entry.avatar_url ? (
-                        <img
-                          src={entry.avatar_url}
-                          alt={entry.name}
-                          className="w-7 h-7 rounded-full object-cover shrink-0 border border-border-custom"
-                        />
-                      ) : (
-                        <span className={`w-7 h-7 flex items-center justify-center rounded-full text-[10px] font-black shrink-0 border select-none ${avatarStyle}`}>
-                          {entry.name.substring(0, 1).toUpperCase()}
-                        </span>
-                      )}
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span
-                            style={{ color: isCurrentUser ? undefined : 'var(--text-primary)' }}
-                            className={`truncate ${isCurrentUser ? 'text-accent-custom font-extrabold' : ''}`}
-                          >
-                            {entry.name}
-                          </span>
-                          {isCurrentUser && (
-                            <span className="text-[8px] bg-accent-custom/15 text-accent-custom px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider border border-accent-custom/20 select-none shrink-0">
-                              Você
-                            </span>
-                          )}
-                        </div>
-                        <span className={`text-[9px] font-bold sm:hidden mt-0.5 select-none shrink-0 ${
-                          entry.aproveitamento >= 70 ? 'text-green-500' :
-                          entry.aproveitamento >= 40 ? 'text-amber-500' :
-                          entry.predictions_count === 0 ? 'text-secondary' : 'text-red-400'
-                        }`}>
-                          {entry.predictions_count === 0 ? 'sem palpites' : `${entry.aproveitamento}% de aproveitamento`}
-                        </span>
+                return (
+                  <tr
+                    key={entry.user_id}
+                    className={`transition-all duration-200 ${
+                      isCurrentUser
+                        ? 'bg-accent-custom/5 dark:bg-accent-custom/5 border-l-4 border-l-accent-custom'
+                        : 'hover:bg-muted/30'
+                    }`}
+                  >
+                    {/* Posição */}
+                    <td className="py-3 px-1 text-center">
+                      <div className="flex justify-center">
+                        {rankBadge}
                       </div>
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* Aproveitamento (desktop only) */}
-                  <td className="py-3 px-2 text-center select-none hidden sm:table-cell">
-                    <span className={`text-xs font-black ${
-                      entry.aproveitamento >= 70 ? 'text-green-500' :
-                      entry.aproveitamento >= 40 ? 'text-amber-500' :
-                      entry.predictions_count === 0 ? 'text-secondary' : 'text-red-400'
-                    }`}>
-                      {entry.predictions_count === 0 ? '—' : `${entry.aproveitamento}%`}
-                    </span>
-                  </td>
+                    {/* Participante (Avatar + Nome + Palpites no Mobile) */}
+                    <td className="py-3 px-2 font-bold text-sm min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {entry.avatar_url ? (
+                          <img
+                            src={entry.avatar_url}
+                            alt={entry.name}
+                            className="w-7 h-7 rounded-full object-cover shrink-0 border border-border-custom"
+                          />
+                        ) : (
+                          <span className={`w-7 h-7 flex items-center justify-center rounded-full text-[10px] font-black shrink-0 border select-none ${avatarStyle}`}>
+                            {entry.name.substring(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              style={{ color: isCurrentUser ? undefined : 'var(--text-primary)' }}
+                              className={`truncate ${isCurrentUser ? 'text-accent-custom font-extrabold' : ''}`}
+                            >
+                              {entry.name}
+                            </span>
+                            {isCurrentUser && (
+                              <span className="text-[8px] bg-accent-custom/15 text-accent-custom px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider border border-accent-custom/20 select-none shrink-0">
+                                Você
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[9px] font-bold sm:hidden mt-0.5 select-none shrink-0 ${
+                            entry.aproveitamento >= 70 ? 'text-green-500' :
+                            entry.aproveitamento >= 40 ? 'text-amber-500' :
+                            entry.predictions_count === 0 ? 'text-secondary' : 'text-red-400'
+                          }`}>
+                            {entry.predictions_count === 0 ? 'sem palpites' : `${entry.aproveitamento}% de aproveitamento`}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
 
-                  {/* Pontos */}
-                  <td className="py-3 px-4 text-right">
-                    <span
-                      style={{ color: isCurrentUser ? undefined : 'var(--text-primary)' }}
-                      className={`text-base font-black tracking-wider ${
-                        isCurrentUser ? 'text-accent-custom' : ''
-                      }`}
-                    >
-                      {entry.total_points}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
+                    {/* Aproveitamento (desktop only) */}
+                    <td className="py-3 px-2 text-center select-none hidden sm:table-cell">
+                      <span className={`text-xs font-black ${
+                        entry.aproveitamento >= 70 ? 'text-green-500' :
+                        entry.aproveitamento >= 40 ? 'text-amber-500' :
+                        entry.predictions_count === 0 ? 'text-secondary' : 'text-red-400'
+                      }`}>
+                        {entry.predictions_count === 0 ? '—' : `${entry.aproveitamento}%`}
+                      </span>
+                    </td>
+
+                    {/* Pontos */}
+                    <td className="py-3 px-4 text-right">
+                      <span
+                        style={{ color: isCurrentUser ? undefined : 'var(--text-primary)' }}
+                        className={`text-base font-black tracking-wider ${
+                          isCurrentUser ? 'text-accent-custom' : ''
+                        }`}
+                      >
+                        {entry.total_points}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

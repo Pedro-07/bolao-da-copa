@@ -1,8 +1,8 @@
 import React from 'react';
 import { createClient } from '@/lib/supabase/server';
-import { getRanking } from '@/app/actions';
+import { getRanking, getUserRooms } from '@/app/actions';
 import MatchCard from '@/components/ui/MatchCard';
-import RankingTable from '@/components/ui/RankingTable';
+import RankingTabsClient from '@/components/ui/RankingTabsClient';
 import { Match, Prediction } from '@/types';
 import Link from 'next/link';
 import { isSameDayInSaoPaulo } from '@/lib/date';
@@ -15,6 +15,26 @@ export default async function HomePage() {
 
   // 1. Obter usuário logado
   const { data: { user } } = await supabase.auth.getUser();
+
+  // Buscar status de cadastro financeiro
+  let isFinancialRegistered = false;
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_financial_registered')
+      .eq('id', user.id)
+      .single();
+    isFinancialRegistered = !!profile?.is_financial_registered;
+  }
+
+  // Fetch rooms for user
+  let userRooms: any[] = [];
+  if (user) {
+    const roomsResult = await getUserRooms();
+    if (roomsResult.success && roomsResult.rooms) {
+      userRooms = roomsResult.rooms;
+    }
+  }
 
   // 2. Buscar todas as partidas
   const { data: matchesData } = await supabase
@@ -42,10 +62,10 @@ export default async function HomePage() {
   // Snapshot do Top 3 para o Hero
   const topThree = ranking.slice(0, 3);
 
-  // 4. Filtrar apenas as partidas do dia atual no fuso de Brasília
+  // 4. Filtrar apenas as partidas do dia atual no fuso de Brasília que ainda não começaram
   const nowInSaoPaulo = new Date();
   const todaysMatches = matches.filter(match => {
-    return isSameDayInSaoPaulo(match.match_time, nowInSaoPaulo);
+    return isSameDayInSaoPaulo(match.match_time, nowInSaoPaulo) && new Date(match.match_time) > nowInSaoPaulo;
   });
 
   return (
@@ -251,7 +271,13 @@ export default async function HomePage() {
 
         {/* Tabela de Classificação Completa (1 coluna) */}
         <div id="ranking" className="lg:col-span-1 lg:sticky lg:top-24">
-          <RankingTable ranking={ranking} currentUserId={user?.id} totalMatches={matches.length} />
+          <RankingTabsClient
+            globalRanking={ranking}
+            currentUserId={user?.id}
+            totalMatches={matches.length}
+            initialRooms={userRooms}
+            isFinancialRegistered={isFinancialRegistered}
+          />
         </div>
       </div>
     </div>

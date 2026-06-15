@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import FlagTeam from './FlagTeam';
 import { Match } from '@/types';
-import { CaretDown, CaretUp } from '@phosphor-icons/react';
+import { CaretDown, CaretUp, MagnifyingGlass } from '@phosphor-icons/react';
 import { formatMatchDate, formatMatchTime } from '@/lib/date';
 
 interface PredictionItem {
@@ -104,9 +104,9 @@ function MatchAccordionContent({
             <div className="flex items-center gap-2 shrink-0">
               <span
                 style={{ color: isSelf ? undefined : 'var(--text-primary)' }}
-                className={`font-extrabold text-sm tracking-wider select-all ${isSelf ? 'text-accent-custom' : ''}`}
+                className={`font-extrabold text-sm tracking-wider select-none ${isSelf ? 'text-accent-custom' : ''}`}
               >
-                {pred.home_score} x {pred.away_score}
+                {!matchStarted && !isSelf ? '🔒' : `${pred.home_score} x ${pred.away_score}`}
               </span>
               {hasPoints && (
                 <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-lg border shrink-0 ${pointsColor}`}>
@@ -139,16 +139,45 @@ export default function PredictionsListClient({
   allProfiles,
 }: PredictionsListClientProps) {
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'groups' | 'playoffs' | 'mine' | 'pending'>('all');
 
   const toggleExpand = (matchId: string) => {
     setExpandedMatchId(expandedMatchId === matchId ? null : matchId);
   };
 
+  // Filtrar partidas
+  const filteredMatches = matches.filter((match) => {
+    // 1. Filtro de busca por nome de time
+    const matchesSearch =
+      match.home_team.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      match.away_team.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!matchesSearch) return false;
+
+    // 2. Filtro de tipo de partida/palpite
+    const isGroupStage = match.stage === 'Fase de Grupos';
+    const userHasPredicted = predictions.some(p => p.match_id === match.id && p.user_id === currentUserId);
+
+    if (filterType === 'groups') {
+      return isGroupStage;
+    }
+    if (filterType === 'playoffs') {
+      return !isGroupStage;
+    }
+    if (filterType === 'mine') {
+      return userHasPredicted;
+    }
+    if (filterType === 'pending') {
+      return !userHasPredicted;
+    }
+    return true;
+  });
+
   // Agrupar partidas por Fase/Grupo
   const groups: Record<string, Match[]> = {};
   const groupOrder: string[] = [];
 
-  matches.forEach((match) => {
+  filteredMatches.forEach((match) => {
     const key = match.group_name || match.stage;
     if (!groups[key]) {
       groups[key] = [];
@@ -188,99 +217,143 @@ export default function PredictionsListClient({
     return cleanA.localeCompare(cleanB, undefined, { numeric: true, sensitivity: 'base' });
   });
 
-  console.log('PredictionsListClient rendered groups order:', groupOrder);
-
-
-
   return (
-    <div className="space-y-8 animate-fadeIn">
-      {groupOrder.map((groupKey) => {
-        const groupMatches = groups[groupKey];
-        const badgeLetter = groupKey.startsWith('Grupo ')
-          ? groupKey.replace('Grupo ', '').trim().substring(0, 1)
-          : '🏆';
+    <div className="space-y-6">
+      {/* Barra de Filtros e Busca */}
+      <div className="bg-card border border-border-custom rounded-2xl p-4 shadow-md space-y-4">
+        {/* Campo de Busca */}
+        <div className="relative">
+          <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-secondary">
+            <MagnifyingGlass size={18} />
+          </span>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar time (ex: Brasil, Argentina...)"
+            className="w-full h-11 pl-10 pr-4 bg-base border border-border-custom focus:border-accent-custom text-primary text-sm rounded-xl focus:outline-none transition-colors"
+          />
+        </div>
 
-        return (
-          <div key={groupKey} className="space-y-3">
-            {/* Header do Grupo */}
-            <div className="flex items-center gap-2.5 pt-2">
-              <span className="w-6 h-6 flex items-center justify-center rounded-full bg-amber-500 text-slate-950 font-black text-xs uppercase shrink-0 select-none shadow-sm">
-                {badgeLetter}
-              </span>
-              <h3 className="text-xs sm:text-sm font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest select-none">
-                {groupKey}
-              </h3>
-            </div>
+        {/* Botões de Filtro */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'all', label: 'Todos' },
+            { id: 'groups', label: 'Fase de Grupos' },
+            { id: 'playoffs', label: 'Mata-Mata' },
+            { id: 'mine', label: 'Meus Palpites' },
+            { id: 'pending', label: 'Pendentes' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setFilterType(tab.id as any)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                filterType === tab.id
+                  ? 'bg-accent-custom text-slate-950 shadow-sm font-black'
+                  : 'bg-muted hover:bg-border-custom text-secondary hover:text-primary'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-            {/* Lista de Partidas do Grupo */}
-            <div className="space-y-2.5">
-              {groupMatches.map((match) => {
-                const isOpen = expandedMatchId === match.id;
-                const matchPredictions = predictions.filter((p) => p.match_id === match.id);
-                const count = predictionsCount[match.id] || 0;
+      {filteredMatches.length === 0 ? (
+        <div className="text-center py-12 px-6 bg-card border border-border-custom rounded-2xl text-secondary font-bold">
+          Nenhum jogo encontrado para os critérios selecionados.
+        </div>
+      ) : (
+        <div className="space-y-8 animate-fadeIn">
+          {groupOrder.map((groupKey) => {
+            const groupMatches = groups[groupKey];
+            const badgeLetter = groupKey.startsWith('Grupo ')
+              ? groupKey.replace('Grupo ', '').trim().substring(0, 1)
+              : '🏆';
 
-                return (
-                  <div key={match.id} className="group">
-                    {/* Linha do Confronto (Accordion Header - Min 48px de altura) */}
-                    <div
-                      onClick={() => toggleExpand(match.id)}
-                      className={`flex items-center justify-between p-3.5 min-h-[48px] bg-card border ${
-                        isOpen ? 'border-accent-custom' : 'border-border-custom hover:border-secondary'
-                      } rounded-2xl cursor-pointer select-none transition-all duration-200 shadow-md`}
-                    >
-                      {/* Mandante x Visitante */}
-                      <div className="flex items-center justify-between flex-grow min-w-0 mr-4">
-                        {/* Mandante */}
-                        <div className="flex-1 flex justify-end truncate min-w-0 pr-1">
-                          <FlagTeam flag={match.home_flag} name={match.home_team} reverse={true} className="text-xs sm:text-sm" />
+            return (
+              <div key={groupKey} className="space-y-3">
+                {/* Header do Grupo */}
+                <div className="flex items-center gap-2.5 pt-2">
+                  <span className="w-6 h-6 flex items-center justify-center rounded-full bg-amber-500 text-slate-950 font-black text-xs uppercase shrink-0 select-none shadow-sm">
+                    {badgeLetter}
+                  </span>
+                  <h3 className="text-xs sm:text-sm font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest select-none">
+                    {groupKey}
+                  </h3>
+                </div>
+
+                {/* Lista de Partidas do Grupo */}
+                <div className="space-y-2.5">
+                  {groupMatches.map((match) => {
+                    const isOpen = expandedMatchId === match.id;
+                    const matchPredictions = predictions.filter((p) => p.match_id === match.id);
+                    const count = predictionsCount[match.id] || 0;
+
+                    return (
+                      <div key={match.id} className="group">
+                        {/* Linha do Confronto (Accordion Header) */}
+                        <div
+                          onClick={() => toggleExpand(match.id)}
+                          className={`flex items-center justify-between p-3.5 min-h-[48px] bg-card border ${
+                            isOpen ? 'border-accent-custom' : 'border-border-custom hover:border-secondary'
+                          } rounded-2xl cursor-pointer select-none transition-all duration-200 shadow-md`}
+                        >
+                          {/* Mandante x Visitante */}
+                          <div className="flex items-center justify-between flex-grow min-w-0 mr-4">
+                            {/* Mandante */}
+                            <div className="flex-1 flex justify-end truncate min-w-0 pr-1">
+                              <FlagTeam flag={match.home_flag} name={match.home_team} reverse={true} className="text-xs sm:text-sm" />
+                            </div>
+
+                            {/* Data/Hora ou Placar Final */}
+                            {match.home_score !== null && match.away_score !== null ? (
+                              <div className="mx-2 px-2.5 py-1 bg-accent-custom/10 border border-accent-custom/30 rounded-xl text-[11px] font-black whitespace-nowrap shrink-0 select-none flex flex-col items-center justify-center leading-normal text-accent-custom">
+                                <span className="text-[8px] uppercase tracking-wider font-bold opacity-70">Resultado</span>
+                                <span>{match.home_score} x {match.away_score}</span>
+                              </div>
+                            ) : (
+                              <div className="mx-2 px-1.5 py-1 bg-muted border border-border-custom/80 rounded-xl text-[9px] sm:text-[10px] text-secondary font-extrabold whitespace-nowrap shrink-0 select-none flex flex-col items-center justify-center leading-normal">
+                                <span>{formatMatchDate(match.match_time)}</span>
+                                <span style={{ color: 'var(--text-primary)' }} className="font-black">{formatMatchTime(match.match_time)}</span>
+                              </div>
+                            )}
+
+                            {/* Visitante */}
+                            <div className="flex-1 flex justify-start truncate min-w-0 pl-1">
+                              <FlagTeam flag={match.away_flag} name={match.away_team} reverse={false} className="text-xs sm:text-sm" />
+                            </div>
+                          </div>
+
+                          {/* Contagem de Palpites & Seta */}
+                          <div className="flex items-center gap-1.5 shrink-0 text-secondary">
+                            <span className="text-[11px] font-bold whitespace-nowrap">
+                              {count} {count === 1 ? 'palpite' : 'palpites'}
+                            </span>
+                            {isOpen ? (
+                              <CaretUp size={14} />
+                            ) : (
+                              <CaretDown size={14} />
+                            )}
+                          </div>
                         </div>
 
-                        {/* Data/Hora ou Placar Final */}
-                        {match.home_score !== null && match.away_score !== null ? (
-                          <div className="mx-2 px-2.5 py-1 bg-accent-custom/10 border border-accent-custom/30 rounded-xl text-[11px] font-black whitespace-nowrap shrink-0 select-none flex flex-col items-center justify-center leading-normal text-accent-custom">
-                            <span className="text-[8px] uppercase tracking-wider font-bold opacity-70">Resultado</span>
-                            <span>{match.home_score} x {match.away_score}</span>
-                          </div>
-                        ) : (
-                          <div className="mx-2 px-1.5 py-1 bg-muted border border-border-custom/80 rounded-xl text-[9px] sm:text-[10px] text-secondary font-extrabold whitespace-nowrap shrink-0 select-none flex flex-col items-center justify-center leading-normal">
-                            <span>{formatMatchDate(match.match_time)}</span>
-                            <span style={{ color: 'var(--text-primary)' }} className="font-black">{formatMatchTime(match.match_time)}</span>
-                          </div>
-                        )}
-
-                        {/* Visitante */}
-                        <div className="flex-1 flex justify-start truncate min-w-0 pl-1">
-                          <FlagTeam flag={match.away_flag} name={match.away_team} reverse={false} className="text-xs sm:text-sm" />
-                        </div>
+                        {/* Detalhes dos Palpites (Accordion Content) */}
+                        {isOpen && MatchAccordionContent({
+                          match,
+                          matchPredictions,
+                          allProfiles,
+                          currentUserId,
+                        })}
                       </div>
-
-                      {/* Contagem de Palpites & Seta */}
-                      <div className="flex items-center gap-1.5 shrink-0 text-secondary">
-                        <span className="text-[11px] font-bold whitespace-nowrap">
-                          {count} {count === 1 ? 'palpite' : 'palpites'}
-                        </span>
-                        {isOpen ? (
-                          <CaretUp size={14} />
-                        ) : (
-                          <CaretDown size={14} />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Detalhes dos Palpites (Accordion Content) */}
-                    {isOpen && MatchAccordionContent({
-                      match,
-                      matchPredictions,
-                      allProfiles,
-                      currentUserId,
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

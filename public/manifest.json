@@ -1,0 +1,18 @@
+{
+  "name": "Bolão Copa do Mundo 2026",
+  "short_name": "Bolão Copa 2026",
+  "description": "Acompanhe e dê palpites nos jogos da Copa do Mundo de 2026",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

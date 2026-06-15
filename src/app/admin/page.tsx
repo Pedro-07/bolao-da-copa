@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Match } from '@/types';
 import AdminPanelClient from '@/components/ui/AdminPanelClient';
+import { getAllWithdrawalsAdmin, getAllRoomsAdmin } from '@/app/actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +15,12 @@ export default async function AdminPage() {
   const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
   if (!adminEmail || user.email !== adminEmail) redirect('/');
 
-  const [matchesResult, profilesResult, predictionsResult] = await Promise.all([
+  const [matchesResult, profilesResult, predictionsResult, withdrawalsRes, roomsRes] = await Promise.all([
     supabase.from('matches').select('*').order('match_time', { ascending: true }),
     supabase.from('profiles').select('id, name').order('name', { ascending: true }),
     supabase.from('predictions').select('user_id'),
+    getAllWithdrawalsAdmin(),
+    getAllRoomsAdmin(),
   ]);
 
   const matches: Match[] = matchesResult.data || [];
@@ -33,6 +36,9 @@ export default async function AdminPage() {
     predictionCount: predCounts[p.id] || 0,
   }));
 
+  const withdrawals = withdrawalsRes.success ? withdrawalsRes.data : [];
+  const rooms = roomsRes.success ? roomsRes.data : [];
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 md:py-16 bg-base text-primary min-h-[calc(100vh-4rem)] transition-colors duration-300">
       <div className="mb-10 border-b border-border-custom/60 pb-6">
@@ -40,11 +46,17 @@ export default async function AdminPage() {
           Painel do Administrador
         </h1>
         <p className="text-sm text-secondary mt-2 font-medium">
-          Gerencie partidas, resultados e participantes do bolão.
+          Gerencie partidas, resultados, saques e encerramento de bolões.
         </p>
       </div>
 
-      <AdminPanelClient matches={matches} users={users} adminUserId={user.id} />
+      <AdminPanelClient
+        matches={matches}
+        users={users}
+        adminUserId={user.id}
+        withdrawals={withdrawals as any}
+        rooms={rooms as any}
+      />
     </div>
   );
 }

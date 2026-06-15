@@ -17,6 +17,7 @@ export const metadata: Metadata = {
   description: 'Palpite nos jogos da Copa do Mundo 2026, acumule pontos e dispute com seus amigos no ranking geral!',
   keywords: ['copa do mundo', 'bolão', 'futebol', 'amigos', 'palpites', '2026'],
   metadataBase: new URL(siteUrl),
+  manifest: '/manifest.json',
   openGraph: {
     title: 'Bolão Copa do Mundo 2026 ⚽',
     description: 'Palpite nos jogos, acumule pontos e vença seus amigos na maior Copa do Mundo de todos os tempos!',
@@ -35,10 +36,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: '#0f172a',
+  themeColor: '#090d16',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -47,8 +49,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className={`${outfit.variable} h-full antialiased`}>
+    <html lang="pt-BR" className={`${outfit.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
+        <link rel="apple-touch-icon" href="/icon.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <script
           dangerouslySetInnerHTML={{
             __html: `

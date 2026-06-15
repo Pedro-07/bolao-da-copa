@@ -11,6 +11,7 @@ import { formatMatchDateTime } from '@/lib/date';
 import EditNicknameForm from '@/components/ui/EditNicknameForm';
 import ShareButton from '@/components/ui/ShareButton';
 import AvatarUpload from '@/components/ui/AvatarUpload';
+import FinancialProfileClient from '@/components/ui/FinancialProfileClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +24,10 @@ export default async function PerfilPage() {
     redirect('/login');
   }
 
-  // 2. Buscar perfil correspondente para pegar o nome
+  // 2. Buscar perfil correspondente para pegar o nome, avatar e saldo
   const { data: profile } = await supabase
     .from('profiles')
-    .select('name, avatar_url')
+    .select('name, avatar_url, balance, is_financial_registered, full_name, cpf_cnpj, birth_date, phone, pix_key_type, pix_key')
     .eq('id', user.id)
     .single();
 
@@ -99,6 +100,36 @@ export default async function PerfilPage() {
   const scoredPredictions = predictionsList.filter(
     (p) => p.match.home_score !== null && p.match.away_score !== null
   );
+
+  // 5. Buscar dados financeiros
+  const { data: transactionsData } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+
+  const { data: withdrawalsData } = await supabase
+    .from('withdrawals')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+
+  const transactions = (transactionsData || []).map((t: any) => ({
+    id: t.id,
+    amount: Number(t.amount),
+    type: t.type as any,
+    description: t.description,
+    created_at: t.created_at
+  }));
+
+  const withdrawals = (withdrawalsData || []).map((w: any) => ({
+    id: w.id,
+    amount: Number(w.amount),
+    pix_key_type: w.pix_key_type,
+    pix_key: w.pix_key,
+    status: w.status as any,
+    created_at: w.created_at
+  }));
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 md:py-16 bg-base text-primary min-h-[calc(100vh-4rem)] transition-colors duration-300">
@@ -185,6 +216,25 @@ export default async function PerfilPage() {
             <span className="text-[9px] text-secondary font-bold">máx</span>
           </div>
         </div>
+      </div>
+
+      {/* Seção Financeira */}
+      <div className="mb-10">
+        <h2 className="text-base font-extrabold text-primary mb-5 flex items-center gap-2 uppercase tracking-wider pb-2 border-b border-border-custom">
+          💰 Carteira e Saques
+        </h2>
+        <FinancialProfileClient
+          initialBalance={Number(profile?.balance || 0)}
+          transactions={transactions}
+          withdrawals={withdrawals}
+          isFinancialRegistered={!!profile?.is_financial_registered}
+          fullName={profile?.full_name ?? ''}
+          cpfCnpj={profile?.cpf_cnpj ?? ''}
+          birthDate={profile?.birth_date ?? ''}
+          phone={profile?.phone ?? ''}
+          pixKeyType={(profile?.pix_key_type as any) ?? 'CPF'}
+          pixKey={profile?.pix_key ?? ''}
+        />
       </div>
 
       {predictionsList.length === 0 ? (
