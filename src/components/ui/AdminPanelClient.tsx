@@ -4,8 +4,8 @@ import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import FlagTeam from './FlagTeam';
 import { Match } from '@/types';
-import { saveMatchResult, shiftAllMatchTimes } from '@/app/actions';
-import { Plus, Check, Spinner, Trash, Calendar, Clock, Users, Coins, Crown, X } from '@phosphor-icons/react';
+import { saveMatchResult, shiftAllMatchTimes, fetchAndUpdateMatchResults } from '@/app/actions';
+import { Plus, Check, Spinner, Trash, Calendar, Clock, Users, Coins, Crown, X, ArrowsClockwise } from '@phosphor-icons/react';
 import { createClient } from '@/lib/supabase/client';
 import { showToast } from './Toast';
 import { formatMatchDateTime, parseLocalDateToUTC } from '@/lib/date';
@@ -91,6 +91,29 @@ export default function AdminPanelClient({
   // Estados de processamento financeiro
   const [processingWithdrawalId, setProcessingWithdrawalId] = useState<string | null>(null);
   const [finalizingRoomId, setFinalizingRoomId] = useState<string | null>(null);
+
+  // Estado e handler de sincronização da API de futebol
+  const [isSyncingApi, setIsSyncingApi] = useState(false);
+
+  const handleSyncApiResults = async () => {
+    if (!confirm('Deseja realmente buscar e atualizar os resultados das partidas finalizadas via API? Isso recalculará instantaneamente os pontos de todos os usuários.')) {
+      return;
+    }
+    setIsSyncingApi(true);
+    try {
+      const res = await fetchAndUpdateMatchResults();
+      if (res.success) {
+        showToast(res.message || 'Sincronização concluída com sucesso.', 'success');
+        router.refresh();
+      } else {
+        showToast(res.error || 'Erro ao sincronizar resultados.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Erro inesperado na sincronização.', 'error');
+    } finally {
+      setIsSyncingApi(false);
+    }
+  };
 
   const handleDeleteUser = async (user: AdminUser) => {
     if (
@@ -567,6 +590,32 @@ export default function AdminPanelClient({
                     <Spinner size={14} className="animate-spin" />
                   ) : (
                     'Sincronizar com Brasília (UTC-3)'
+                  )}
+                </button>
+              </div>
+
+              {/* Card de Sincronização automática via API */}
+              <div className="bg-card border border-border-custom rounded-2xl p-6 shadow-xl transition-all duration-300">
+                <h2 className="text-sm font-extrabold text-primary mb-3 uppercase tracking-wider flex items-center gap-2 select-none">
+                  <ArrowsClockwise size={16} className="text-accent-custom" />
+                  Sincronização via API
+                </h2>
+                <p className="text-xs text-secondary mb-4 leading-relaxed font-medium">
+                  Busque resultados reais diretamente de servidores esportivos externos (API-Football). 
+                  Isso atualizará placares das partidas passadas e recalculará os pontos dos usuários na hora!
+                </p>
+                <button
+                  onClick={handleSyncApiResults}
+                  disabled={isSyncingApi}
+                  className="w-full h-11 flex items-center justify-center gap-1.5 bg-accent-custom hover:bg-accent-hover text-slate-950 text-xs font-extrabold uppercase tracking-wider rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isSyncingApi ? (
+                    <Spinner size={14} className="animate-spin text-slate-950" />
+                  ) : (
+                    <>
+                      <ArrowsClockwise size={14} weight="bold" />
+                      Sincronizar Resultados
+                    </>
                   )}
                 </button>
               </div>

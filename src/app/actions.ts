@@ -6,6 +6,7 @@ import { RankingEntry, Match, Prediction } from '@/types';
 import { revalidatePath } from 'next/cache';
 import timeMapping from '@/lib/match_times_mapping.json';
 import { validateCPF, validateCNPJ, validateAge, validatePhone, validatePixKey } from '@/lib/validation';
+import { fetchFinishedFixtures, TEAM_TRANSLATIONS } from '@/lib/footballApi';
 
 async function ensureUserProfile(user: any) {
   try {
@@ -1670,6 +1671,127 @@ export async function saveFinancialProfile(data: {
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro inesperado.' };
+  }
+}
+
+/**
+ * Busca resultados na API de futebol e atualiza as partidas pendentes no banco.
+ * Suporta execução por administrador autenticado ou bypass seguro via Cron Job.
+ */
+export async function fetchAndUpdateMatchResults(bypassCronSecret?: string) {
+  try {
+    const isCronBypass = bypassCronSecret && 
+                         process.env.CRON_SECRET && 
+                         bypassCronSecret.trim() === process.env.CRON_SECRET.trim();
+
+    if (!isCronBypass) {
+      const supabase = await createClient();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        return { success: false, error: 'Usuário não autenticado.' };
+      }
+
+      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+      if (!adminEmail || user.email !== adminEmail) {
+        return { success: false, error: 'Acesso negado. Apenas o administrador pode atualizar resultados.' };
+      }
+    }
+
+    // Usaremos o admin client para ler/gravar para suportar execução via Cron (bypass RLS)
+    const admin = createAdminClient();
+    
+    // Buscar partidas do nosso banco de dados que não possuem resultado e que já iniciaram
+    const now = new Date().toISOString();
+    const { data: dbMatches, error: dbError } = await admin
+      .from('matches')
+      .select('*')
+      .is('home_score', null)
+      .is('away_score', null)
+      .lt('match_time', now);
+
+    if (dbError || !dbMatches) {
+      console.error('[API-Football Sync] Erro ao buscar partidas no banco:', dbError?.message);
+      return { success: false, error: 'Erro ao buscar partidas pendentes no banco de dados.' };
+    }
+
+    if (dbMatches.length === 0) {
+      return { success: true, updatedCount: 0, message: 'Nenhuma partida pendente de resultado no fuso horário atual.' };
+    }
+
+    // Buscar partidas finalizadas da API-Football
+    const apiFixtures = await fetchFinishedFixtures();
+    let updatedCount = 0;
+
+    for (const dbMatch of dbMatches) {
+      const translatedHome = TEAM_TRANSLATIONS[dbMatch.home_team] || dbMatch.home_team;
+      const translatedAway = TEAM_TRANSLATIONS[dbMatch.away_team] || dbMatch.away_team;
+
+      const dbMatchDate = new Date(dbMatch.match_time);
+      
+      const matchFixture = apiFixtures.find((apiMatch) => {
+        const homeNameApi = apiMatch.teams.home.name.toLowerCase();
+        const awayNameApi = apiMatch.teams.away.name.toLowerCase();
+        const homeNameTranslated = translatedHome.toLowerCase();
+        const awayNameTranslated = translatedAway.toLowerCase();
+
+        const sameTeams = (homeNameApi === homeNameTranslated && awayNameApi === awayNameTranslated) ||
+                          (homeNameApi === awayNameTranslated && awayNameApi === homeNameTranslated);
+
+        if (!sameTeams) return false;
+
+        const apiMatchDate = new Date(apiMatch.date);
+        if (apiMatchDate.getFullYear() !== dbMatchDate.getFullYear()) {
+          return true; // Ignora o horário se estiver testando com temporadas históricas (ex: 2022)
+        }
+        const diffHours = Math.abs(apiMatchDate.getTime() - dbMatchDate.getTime()) / (1000 * 60 * 60);
+        return diffHours <= 4;
+      });
+
+      if (matchFixture && 
+          matchFixture.goals.home !== null && 
+          matchFixture.goals.away !== null && 
+          ['FT', 'AET', 'PEN'].includes(matchFixture.status.short)) {
+        
+        const isReversed = matchFixture.teams.home.name.toLowerCase() === translatedAway.toLowerCase();
+        const apiHomeScore = matchFixture.goals.home;
+        const apiAwayScore = matchFixture.goals.away;
+        
+        const homeScore = isReversed ? apiAwayScore : apiHomeScore;
+        const awayScore = isReversed ? apiHomeScore : apiAwayScore;
+
+        const { error: updateError } = await admin
+          .from('matches')
+          .update({
+            home_score: homeScore,
+            away_score: awayScore
+          })
+          .eq('id', dbMatch.id);
+
+        if (updateError) {
+          console.error(`[API-Football Sync] Erro ao atualizar partida ${dbMatch.id}:`, updateError.message);
+        } else {
+          updatedCount++;
+        }
+      }
+    }
+
+    if (updatedCount > 0) {
+      revalidatePath('/admin');
+      revalidatePath('/palpites');
+      revalidatePath('/perfil');
+      revalidatePath('/');
+    }
+
+    return { 
+      success: true, 
+      updatedCount, 
+      message: updatedCount > 0 
+        ? `${updatedCount} partidas atualizadas com sucesso!` 
+        : 'Nenhuma nova partida finalizada correspondente foi encontrada.' 
+    };
+  } catch (error: any) {
+    console.error('[API-Football Sync] Erro inesperado na sincronização:', error);
+    return { success: false, error: error.message || 'Erro ao sincronizar resultados.' };
   }
 }
 
