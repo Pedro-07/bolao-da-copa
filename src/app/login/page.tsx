@@ -56,6 +56,7 @@ function LoginForm() {
           } else {
             const pendingRoomId = localStorage.getItem('pending_room_id');
             if (pendingRoomId) {
+              localStorage.removeItem('pending_room_id');
               router.push(`/salas/join/${pendingRoomId}`);
             } else {
               router.push('/palpites');
@@ -79,6 +80,7 @@ function LoginForm() {
           if (!signInError) {
             const pendingRoomId = localStorage.getItem('pending_room_id');
             if (pendingRoomId) {
+              localStorage.removeItem('pending_room_id');
               router.push(`/salas/join/${pendingRoomId}`);
             } else {
               router.push('/palpites');

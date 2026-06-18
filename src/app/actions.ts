@@ -579,7 +579,9 @@ export async function joinRoom(roomId: string) {
 
     if (roomError || !room) return { success: false, error: 'Sala não encontrada.' };
 
-    const { data: existingMember } = await supabase
+    // Use admin client for room_participants operations — RLS blocks non-members
+    // from SELECT/INSERT on room_participants, which prevents joining.
+    const { data: existingMember } = await admin
       .from('room_participants')
       .select('payment_status')
       .eq('room_id', roomId)
@@ -593,7 +595,7 @@ export async function joinRoom(roomId: string) {
     const isCreator = room.created_by === user.id;
     const paymentStatus = (Number(room.entry_fee) > 0 && !isCreator) ? 'pending' : 'paid';
 
-    const { error: joinError } = await supabase
+    const { error: joinError } = await admin
       .from('room_participants')
       .insert({
         room_id: roomId,
