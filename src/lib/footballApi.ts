@@ -76,28 +76,98 @@ export interface FootballApiFixture {
 }
 
 /**
- * Busca todas as partidas finalizadas da Copa do Mundo de 2026 usando a API gratuita worldcup26.ir.
+ * Busca todas as partidas da Copa do Mundo de 2026.
+ * Tenta primeiramente a API do OpenFootball (via GitHub Raw) que possui 100% de uptime,
+ * e usa a API do worldcup26.ir como fallback caso a primeira falhe.
  */
 export async function fetchFinishedFixtures(): Promise<FootballApiFixture[]> {
-  const url = 'https://worldcup26.ir/get/games';
+  try {
+    const openFootballUrl = 'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json';
+    console.log(`[Football API] Tentando buscar partidas no OpenFootball: ${openFootballUrl}`);
+    
+    const res = await fetch(openFootballUrl, {
+      method: 'GET',
+      next: { revalidate: 60 } // Cache de 1 minuto
+    });
 
-  console.log(`[WorldCup26 API] Buscando partidas na URL: ${url}`);
+    if (res.ok) {
+      const body = await res.json();
+      const matchesList = body.matches || [];
+      console.log(`[Football API] ${matchesList.length} partidas carregadas com sucesso do OpenFootball.`);
+
+      return matchesList.map((item: any, index: number) => {
+        const hasScore = item.score && item.score.ft !== undefined && item.score.ft !== null;
+        const homeGoals = hasScore ? parseInt(item.score.ft[0], 10) : null;
+        const awayGoals = hasScore ? parseInt(item.score.ft[1], 10) : null;
+
+        // Converter date "YYYY-MM-DD" e time "HH:mm UTC-X" para ISOString
+        let formattedDate = '';
+        try {
+          if (item.date && item.time) {
+            const timeClean = item.time.split(' ')[0];
+            const tzPart = item.time.split(' ')[1] || 'UTC';
+            let offset = 'Z';
+            if (tzPart.startsWith('UTC')) {
+              const offsetVal = tzPart.substring(3);
+              if (offsetVal) {
+                const sign = offsetVal.startsWith('-') ? '-' : '+';
+                const num = parseInt(offsetVal.replace(/[-+]/g, ''), 10);
+                offset = `${sign}${String(num).padStart(2, '0')}:00`;
+              }
+            }
+            formattedDate = new Date(`${item.date}T${timeClean}:00${offset}`).toISOString();
+          } else if (item.date) {
+            formattedDate = new Date(`${item.date}T00:00:00Z`).toISOString();
+          }
+        } catch (e) {
+          formattedDate = item.date || '';
+        }
+
+        return {
+          id: index + 1,
+          date: formattedDate,
+          status: {
+            short: hasScore ? 'FT' : 'NS',
+          },
+          teams: {
+            home: {
+              name: item.team1 || '',
+            },
+            away: {
+              name: item.team2 || '',
+            }
+          },
+          goals: {
+            home: isNaN(homeGoals as number) ? null : homeGoals,
+            away: isNaN(awayGoals as number) ? null : awayGoals,
+          }
+        };
+      });
+    }
+    
+    console.warn(`[Football API] Falha ao conectar com OpenFootball (Status ${res.status}). Tentando fallback para worldcup26.ir...`);
+  } catch (err: any) {
+    console.warn('[Football API] Erro ao conectar com OpenFootball. Tentando fallback para worldcup26.ir...', err.message);
+  }
+
+  // Fallback para worldcup26.ir
+  const url = 'https://worldcup26.ir/get/games';
+  console.log(`[Football API] Buscando partidas via fallback na URL: ${url}`);
 
   const res = await fetch(url, {
     method: 'GET',
-    next: { revalidate: 60 } // Cache simples de 1 minuto
+    next: { revalidate: 60 }
   });
 
   if (!res.ok) {
-    console.error(`[WorldCup26 API] Erro na requisição: Status ${res.status}`);
-    throw new Error(`Erro ao conectar com WorldCup26 API: ${res.statusText}`);
+    console.error(`[Football API] Erro no fallback: Status ${res.status}`);
+    throw new Error(`Erro ao conectar com as APIs de Futebol externas (OpenFootball e WorldCup26).`);
   }
 
   const body = await res.json();
   const gamesList = body.games || [];
   
   return gamesList.map((item: any) => {
-    // Conversão segura dos gols para número ou nulo
     const homeGoals = (item.home_score !== undefined && item.home_score !== null && item.home_score !== 'null') 
       ? parseInt(item.home_score, 10) 
       : null;
@@ -106,7 +176,6 @@ export async function fetchFinishedFixtures(): Promise<FootballApiFixture[]> {
       ? parseInt(item.away_score, 10) 
       : null;
 
-    // Converter local_date "MM/DD/YYYY HH:mm" para ISOString
     let formattedDate = '';
     try {
       if (item.local_date) {
@@ -115,7 +184,6 @@ export async function fetchFinishedFixtures(): Promise<FootballApiFixture[]> {
         formattedDate = new Date(`${year}-${month}-${day}T${timePart}:00`).toISOString();
       }
     } catch (e) {
-      console.warn(`[WorldCup26 API] Erro ao converter data: ${item.local_date}`);
       formattedDate = item.local_date || '';
     }
 
@@ -134,8 +202,8 @@ export async function fetchFinishedFixtures(): Promise<FootballApiFixture[]> {
         }
       },
       goals: {
-        home: homeGoals,
-        away: awayGoals,
+        home: isNaN(homeGoals as number) ? null : homeGoals,
+        away: isNaN(awayGoals as number) ? null : awayGoals,
       }
     };
   });
