@@ -18,9 +18,10 @@ interface MatchCardProps {
   prediction?: Prediction | null;
   isAuthenticated: boolean;
   matchNumber?: number;
+  disablePrediction?: boolean;
 }
 
-export default function MatchCard({ match, prediction, isAuthenticated, matchNumber }: MatchCardProps) {
+export default function MatchCard({ match, prediction, isAuthenticated, matchNumber, disablePrediction = false }: MatchCardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,7 +93,7 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
       );
     } else {
       cardBorderClass = 'border-amber-500/50 hover:border-amber-500';
-      statusBadge = (
+      statusBadge = disablePrediction ? null : (
         <span className="bg-amber-500/10 text-amber-500 border border-amber-500/25 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider select-none animate-pulse">
           Palpitar
         </span>
@@ -243,6 +244,10 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
           {isAConfirmar ? (
             <span className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 font-bold uppercase select-none">
               <Lock size={13} />
+            </span>
+          ) : disablePrediction ? (
+            <span className="flex items-center gap-1 px-2.5 py-1 text-xs text-slate-500 dark:text-slate-400 font-bold uppercase select-none bg-muted/30 rounded-lg border border-border-custom/50">
+              Apenas em salas
             </span>
           ) : !isStarted ? (
             isAuthenticated ? (

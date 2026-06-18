@@ -1,18 +1,17 @@
 import React from 'react';
 import { createClient } from '@/lib/supabase/server';
-import { getRanking, getUserRooms } from '@/app/actions';
+import { getUserRooms } from '@/app/actions';
 import MatchCard from '@/components/ui/MatchCard';
 import RankingTabsClient from '@/components/ui/RankingTabsClient';
 import { Match, Prediction } from '@/types';
 import Link from 'next/link';
 import { isSameDayInSaoPaulo } from '@/lib/date';
-import { SoccerBall } from '@phosphor-icons/react/dist/ssr';
+import { SoccerBall, Plus } from '@phosphor-icons/react/dist/ssr';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const ranking = await getRanking();
 
   // 1. Obter usuário logado
   const { data: { user } } = await supabase.auth.getUser();
@@ -60,13 +59,27 @@ export default async function HomePage() {
     predictionsMap.set(p.match_id, p);
   });
 
-  // Snapshot do Top 3 para o Hero
-  const topThree = ranking.slice(0, 3);
+  // Buscar os match_ids das salas do usuário
+  let roomMatchIds: string[] = [];
+  if (user && userRooms.length > 0) {
+    const roomIds = userRooms.map((r) => r.id);
+    const { data: rmData } = await supabase
+      .from('room_matches')
+      .select('match_id')
+      .in('room_id', roomIds);
+    roomMatchIds = Array.from(new Set((rmData || []).map((rm) => rm.match_id)));
+  }
 
   // 4. Filtrar apenas as partidas do dia atual no fuso de Brasília que ainda não começaram
   const nowInSaoPaulo = new Date();
   const todaysMatches = matches.filter(match => {
-    return isSameDayInSaoPaulo(match.match_time, nowInSaoPaulo) && new Date(match.match_time) > nowInSaoPaulo;
+    const isToday = isSameDayInSaoPaulo(match.match_time, nowInSaoPaulo) && new Date(match.match_time) > nowInSaoPaulo;
+    if (!user) {
+      // Para usuários não logados, mostramos todos os jogos de hoje
+      return isToday;
+    }
+    // Para usuários logados, filtramos apenas os jogos que pertencem às suas salas
+    return isToday && roomMatchIds.includes(match.id);
   });
 
   return (
@@ -120,48 +133,53 @@ export default async function HomePage() {
           </div>
         </div>
 
-        {/* Lado Direito: Snapshot do Ranking */}
-        <div className="lg:col-span-5 bg-card border border-border-custom rounded-2xl p-6 shadow-xl w-full">
-          <h3 className="text-sm font-bold text-secondary uppercase tracking-wider mb-4 flex items-center gap-1.5 select-none">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" className="text-yellow-500">
-              <path d="M200,40H176a8,8,0,0,0,0,16h24v48c0,28.89-21.73,53.2-51.27,57.38A80.24,80.24,0,0,1,136,175.79V200h16a8,8,0,0,1,0,16H136v16h24a8,8,0,0,1,0,16H96a8,8,0,0,1,0-16h24V216H104a8,8,0,0,1,0-16h16V175.79A80.24,80.24,0,0,1,107.27,161.4C77.73,157.2,56,132.89,56,104V56H80a8,8,0,0,0,0-16H56A16,16,0,0,0,40,56v48c0,35.91,26.47,66.19,62,71.39V200h-8a8,8,0,0,0,0,16h8v16h-8a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16h-8V216h8a8,8,0,0,0,0-16h-8V175.39c35.53-5.2,62-35.48,62-71.39V56A16,16,0,0,0,200,40ZM72,56H88V80H72ZM184,80H168V56H184Z"></path>
-            </svg>
-            Líderes do Bolão
-          </h3>
+        {/* Lado Direito: Informações das Salas Privadas */}
+        <div className="lg:col-span-5 bg-card border border-border-custom rounded-2xl p-6 shadow-xl w-full flex flex-col justify-between min-h-[300px]">
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-secondary uppercase tracking-wider mb-2 flex items-center gap-1.5 select-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" className="text-accent-custom">
+                <path d="M224,120v88a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V120A16,16,0,0,1,40,105.41V56A16,16,0,0,1,56,40H200a16,16,0,0,1,16,16v49.41A16,16,0,0,1,224,120ZM200,56H56V96H200ZM48,120v88H208V120Z"></path>
+              </svg>
+              Como Funciona o Bolão
+            </h3>
 
-          {topThree.length === 0 ? (
-            <div className="text-xs text-secondary py-4 italic">
-              Nenhuma pontuação registrada ainda. Seja o primeiro a palpitar!
+            <div className="space-y-4 text-xs">
+              <p className="text-secondary font-semibold leading-relaxed">
+                Neste bolão, a disputa ocorre exclusivamente dentro de <strong className="text-primary">salas privadas</strong>. Os palpites gerais não acumulam pontos globais.
+              </p>
+              
+              <div className="space-y-3">
+                <div className="flex items-start gap-2 text-secondary font-semibold">
+                  <span className="text-accent-custom font-bold text-sm shrink-0">1.</span>
+                  <span><strong className="text-primary">Crie ou entre em uma sala:</strong> Monte sua própria liga privada ou entre em um grupo de amigos usando o código de convite.</span>
+                </div>
+                <div className="flex items-start gap-2 text-secondary font-semibold">
+                  <span className="text-accent-custom font-bold text-sm shrink-0">2.</span>
+                  <span><strong className="text-primary">Faça seus palpites:</strong> Seus palpites serão válidos e contarão pontos nas salas em que você estiver participando como jogador ativo.</span>
+                </div>
+                <div className="flex items-start gap-2 text-secondary font-semibold">
+                  <span className="text-accent-custom font-bold text-sm shrink-0">3.</span>
+                  <span><strong className="text-primary">Dispute a premiação:</strong> Acompanhe o ranking em tempo real. Os vencedores dividem a premiação acumulada da sala!</span>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {topThree.map((player, idx) => {
-                const colors = [
-                  'border-yellow-500/20 bg-yellow-500/5 text-yellow-600 dark:text-yellow-400',
-                  'border-slate-400/20 bg-slate-400/5 text-slate-600 dark:text-slate-300',
-                  'border-amber-600/20 bg-amber-600/5 text-amber-700 dark:text-amber-500'
-                ];
-                return (
-                  <div
-                    key={player.user_id}
-                    className={`flex items-center justify-between p-3.5 border rounded-xl ${colors[idx] || 'border-border-custom bg-muted/30 text-secondary'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-black tracking-wider uppercase opacity-85">
-                        {idx + 1}º
-                      </span>
-                      <span className="font-bold text-sm truncate max-w-[140px] sm:max-w-xs">
-                        {player.name}
-                      </span>
-                    </div>
-                    <span className="font-extrabold text-base tracking-wider">
-                      {player.total_points} pts
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          </div>
+
+          <div className="pt-6 border-t border-border-custom/30 mt-6 flex flex-col gap-3">
+            <Link
+              href={user ? "/salas/criar" : "/login"}
+              className="w-full h-11 flex items-center justify-center gap-1.5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer"
+            >
+              <Plus size={14} weight="bold" />
+              Criar Minha Sala
+            </Link>
+            <Link
+              href="#ranking"
+              className="w-full h-11 flex items-center justify-center border border-border-custom hover:bg-muted text-primary font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+            >
+              Ver Minhas Salas
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -188,15 +206,30 @@ export default async function HomePage() {
 
             {todaysMatches.length === 0 ? (
               <div className="bg-card border border-border-custom rounded-2xl p-10 text-center text-secondary space-y-3 shadow-sm">
-                <p className="font-extrabold text-sm uppercase tracking-wider">Nenhum jogo agendado para hoje.</p>
-                <p className="text-xs">Mas você pode palpitar nos próximos jogos do campeonato!</p>
+                <p className="font-extrabold text-sm uppercase tracking-wider">
+                  {user ? 'Nenhum jogo dos seus bolões ativo hoje.' : 'Nenhum jogo agendado para hoje.'}
+                </p>
+                <p className="text-xs">
+                  {user 
+                    ? 'Para dar palpites, você precisa estar em um bolão que possua jogos hoje!' 
+                    : 'Crie ou participe de uma sala privada para poder palpitar nos próximos confrontos!'}
+                </p>
                 <div className="pt-2 flex justify-center">
-                  <Link
-                    href="/palpites"
-                    className="inline-flex items-center justify-center min-h-[48px] px-5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider shadow"
-                  >
-                    Ver Jogos e Palpitar
-                  </Link>
+                  {user ? (
+                    <Link
+                      href="/salas/criar"
+                      className="inline-flex items-center justify-center min-h-[48px] px-5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer"
+                    >
+                      Criar Nova Sala
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/login"
+                      className="inline-flex items-center justify-center min-h-[48px] px-5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer"
+                    >
+                      Fazer Login / Cadastrar
+                    </Link>
+                  )}
                 </div>
               </div>
             ) : (
@@ -211,6 +244,7 @@ export default async function HomePage() {
                       prediction={predictionsMap.get(match.id)}
                       isAuthenticated={!!user}
                       matchNumber={matchNumber}
+                      disablePrediction={!user}
                     />
                   );
                 })}
@@ -278,7 +312,6 @@ export default async function HomePage() {
             const isSandbox = asaasUrl.includes('sandbox');
             return (
               <RankingTabsClient
-                globalRanking={ranking}
                 currentUserId={user?.id}
                 totalMatches={matches.length}
                 initialRooms={userRooms}

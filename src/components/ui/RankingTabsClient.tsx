@@ -27,7 +27,6 @@ interface Room {
 }
 
 interface RankingTabsClientProps {
-  globalRanking: RankingEntry[];
   currentUserId?: string | null;
   totalMatches: number;
   initialRooms: Room[];
@@ -62,7 +61,6 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 export default function RankingTabsClient({
-  globalRanking,
   currentUserId,
   totalMatches,
   initialRooms,
