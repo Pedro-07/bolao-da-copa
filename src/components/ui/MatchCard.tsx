@@ -28,10 +28,15 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
   const [awayScore, setAwayScore] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [localPrediction, setLocalPrediction] = useState<Prediction | null | undefined>(prediction);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    setLocalPrediction(prediction);
+  }, [prediction]);
 
   const matchTime = new Date(match.match_time);
   const isStarted = matchTime <= new Date();
@@ -41,7 +46,7 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
   const timeFormatted = formatMatchTime(match.match_time);
 
   const hasRealResult = match.home_score !== null && match.away_score !== null;
-  const hasPrediction = !!prediction;
+  const hasPrediction = !!localPrediction;
   const isAConfirmar = match.home_team === 'A confirmar' || match.away_team === 'A confirmar';
 
   // Determinar cores, bordas e badges baseados no status da partida e palpites
@@ -51,11 +56,11 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
 
   if (hasRealResult) {
     // Jogo Encerrado
-    if (prediction) {
-      if (prediction.points === 3) {
+    if (localPrediction) {
+      if (localPrediction.points === 3) {
         cardBgClass = 'bg-green-500/5 dark:bg-green-500/5';
         cardBorderClass = 'border-green-500/30 hover:border-green-500';
-      } else if (prediction.points === 2 || prediction.points === 1) {
+      } else if (localPrediction.points === 2 || localPrediction.points === 1) {
         cardBgClass = 'bg-blue-500/5 dark:bg-blue-500/5';
         cardBorderClass = 'border-blue-500/30 hover:border-blue-500';
       } else {
@@ -96,8 +101,8 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
   }
 
   const handleOpenModal = () => {
-    setHomeScore(prediction ? String(prediction.home_score) : '');
-    setAwayScore(prediction ? String(prediction.away_score) : '');
+    setHomeScore(localPrediction ? String(localPrediction.home_score) : '');
+    setAwayScore(localPrediction ? String(localPrediction.away_score) : '');
     setError(null);
     setIsModalOpen(true);
   };
@@ -129,6 +134,17 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
         const result = await savePrediction(match.id, homeVal, awayVal);
         if (result.success) {
           showToast(hasPrediction ? 'Palpite atualizado!' : 'Palpite salvo com sucesso!', 'success');
+          
+          setLocalPrediction({
+            id: '',
+            match_id: match.id,
+            user_id: '',
+            home_score: homeVal,
+            away_score: awayVal,
+            points: null,
+            created_at: new Date().toISOString()
+          } as Prediction);
+
           router.refresh();
           setIsModalOpen(false);
         } else {
@@ -142,7 +158,7 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
 
   return (
     <div
-      className={`border-2 ${cardBorderClass} ${cardBgClass} rounded-2xl p-5 flex flex-col justify-between shadow-lg hover:scale-[1.01] active:scale-[0.99] sm:hover:scale-[1.02] sm:active:scale-[1.0] transition-all duration-300 min-w-0`}
+      className={`border ${cardBorderClass} ${cardBgClass} rounded-2xl p-5 flex flex-col justify-between shadow-md hover:scale-[1.01] active:scale-[0.99] sm:hover:scale-[1.02] sm:active:scale-[1.0] transition-all duration-300 min-w-0`}
     >
       {/* Header do Card */}
       <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-bold mb-4 pb-3 border-b border-border-custom/50">
@@ -200,9 +216,9 @@ export default function MatchCard({ match, prediction, isAuthenticated, matchNum
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">Seu palpite</span>
                 <div className="flex items-center gap-1.5">
                   <span className="font-extrabold text-xs text-amber-500 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
-                    {prediction.home_score} x {prediction.away_score}
+                    {localPrediction?.home_score} x {localPrediction?.away_score}
                   </span>
-                  {hasRealResult && <PointsBadge points={prediction.points} />}
+                  {hasRealResult && localPrediction && <PointsBadge points={localPrediction.points} />}
                 </div>
               </div>
             ) : (

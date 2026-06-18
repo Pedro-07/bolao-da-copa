@@ -3,32 +3,49 @@
 import React, { useState, useEffect } from 'react';
 import MatchCard from './MatchCard';
 import { Match, Prediction } from '@/types';
-import { CaretDown, CaretUp, MagnifyingGlass } from '@phosphor-icons/react';
+import { CaretDown, CaretUp, MagnifyingGlass, Warning, Trophy } from '@phosphor-icons/react';
+
+interface RoomInfo {
+  room_id: string;
+  payment_status: string;
+  name: string;
+}
 
 interface PredictionsAccordionListProps {
   matches: Match[];
   predictionsMap: Map<string, Prediction>;
   isAuthenticated: boolean;
+  userRooms?: RoomInfo[];
+  roomMatchesMap?: Record<string, string[]>;
 }
 
 export default function PredictionsAccordionList({
   matches,
   predictionsMap,
-  isAuthenticated
+  isAuthenticated,
+  userRooms = [],
+  roomMatchesMap = {}
 }: PredictionsAccordionListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'groups' | 'playoffs' | 'pending' | 'predicted'>('all');
+  const [selectedRoomId, setSelectedRoomId] = useState<string>('all');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // Filtrar partidas
   const filteredMatches = matches.filter((match) => {
-    // 1. Filtro de busca por nome de time
+    // 1. Filtro por Sala Selecionada
+    if (selectedRoomId !== 'all') {
+      const allowedMatchIds = roomMatchesMap[selectedRoomId] || [];
+      if (!allowedMatchIds.includes(match.id)) return false;
+    }
+
+    // 2. Filtro de busca por nome de time
     const matchesSearch =
       match.home_team.toLowerCase().includes(searchTerm.toLowerCase()) ||
       match.away_team.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchesSearch) return false;
 
-    // 2. Filtro de tipo de partida/palpite
+    // 3. Filtro de tipo de partida/palpite
     const isGroupStage = match.stage === 'Fase de Grupos';
     const userHasPredicted = predictionsMap.has(match.id);
 
@@ -105,12 +122,37 @@ export default function PredictionsAccordionList({
     }));
   };
 
-  const isSearchingOrFiltering = searchTerm !== '' || filterType !== 'all';
+  const isSearchingOrFiltering = searchTerm !== '' || filterType !== 'all' || selectedRoomId !== 'all';
+
+  const selectedRoom = userRooms.find((r) => r.room_id === selectedRoomId);
+  const isSelectedRoomPending = selectedRoom?.payment_status === 'pending';
+  const hasAnyPendingRoom = userRooms.some((r) => r.payment_status === 'pending');
 
   return (
     <div className="space-y-6">
       {/* Barra de Filtros e Busca */}
       <div className="bg-card border border-border-custom rounded-2xl p-4 shadow-md space-y-4">
+        {/* Filtro por Sala */}
+        {userRooms.length > 0 && (
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase tracking-widest text-secondary block">
+              Filtrar por Sala de Bolão
+            </label>
+            <select
+              value={selectedRoomId}
+              onChange={(e) => setSelectedRoomId(e.target.value)}
+              className="w-full h-11 px-3 bg-base border border-border-custom text-primary text-xs font-bold rounded-xl focus:outline-none focus:border-accent-custom transition-all cursor-pointer font-semibold"
+            >
+              <option value="all">Todos os meus bolões</option>
+              {userRooms.map((room) => (
+                <option key={room.room_id} value={room.room_id}>
+                  {room.name} {room.payment_status === 'pending' ? '⚠️ (Pendente)' : '✅ (Ativo)'}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Campo de Busca */}
         <div className="relative">
           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-secondary">
@@ -121,7 +163,7 @@ export default function PredictionsAccordionList({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar time (ex: Brasil, Argentina...)"
-            className="w-full h-11 pl-10 pr-4 bg-base border border-border-custom focus:border-accent-custom text-primary text-sm rounded-xl focus:outline-none transition-colors"
+            className="w-full h-11 pl-10 pr-4 bg-base border border-border-custom focus:border-accent-custom text-primary text-sm rounded-xl focus:outline-none transition-colors font-semibold"
           />
         </div>
 
@@ -149,6 +191,34 @@ export default function PredictionsAccordionList({
         </div>
       </div>
 
+      {/* Alertas de Pagamento Pendente */}
+      {selectedRoomId !== 'all' && isSelectedRoomPending && (
+        <div className="bg-amber-500/10 border-2 border-dashed border-amber-500/30 rounded-2xl p-5 space-y-2.5 shadow-lg relative overflow-hidden animate-fadeIn mb-6 select-none">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-amber-500/10 text-amber-500 rounded-xl border border-amber-500/20 shrink-0">
+              <Warning size={20} />
+            </div>
+            <div className="space-y-1">
+              <h5 className="text-xs font-black uppercase tracking-wider text-amber-500">
+                Aguardando Pagamento da Inscrição
+              </h5>
+              <p className="text-[11px] text-secondary leading-relaxed font-semibold">
+                Você ainda não confirmou o pagamento da taxa deste bolão. Seus pontos só começarão a ser contabilizados no ranking após a confirmação e pagamento do Pix na aba <span className="text-primary font-bold">Minhas Salas</span> da página inicial.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedRoomId === 'all' && hasAnyPendingRoom && (
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-3 animate-fadeIn mb-6 select-none">
+          <Warning size={16} className="text-amber-500 shrink-0" />
+          <span className="text-[10px] text-secondary font-semibold">
+            Você possui bolões com pagamento pendente. Lembre-se de confirmar os pagamentos na página inicial para pontuar nos rankings correspondentes!
+          </span>
+        </div>
+      )}
+
       {filteredMatches.length === 0 ? (
         <div className="text-center py-12 px-6 bg-card border border-border-custom rounded-2xl text-secondary font-bold">
           Nenhum jogo encontrado para os critérios selecionados.
@@ -157,7 +227,6 @@ export default function PredictionsAccordionList({
         <div className="space-y-4 animate-fadeIn">
           {groupOrder.map((groupKey) => {
             const groupMatches = groups[groupKey];
-            // Se estiver buscando ou filtrando, mantemos o accordion aberto por padrão
             const isOpen = isSearchingOrFiltering ? true : !!expandedGroups[groupKey];
             
             const badgeLetter = groupKey.startsWith('Grupo ')
@@ -177,7 +246,11 @@ export default function PredictionsAccordionList({
                 >
                   <div className="flex items-center gap-3">
                     <span className="w-7 h-7 flex items-center justify-center rounded-full bg-amber-500 text-slate-950 font-black text-xs uppercase shrink-0 shadow-sm select-none">
-                      {badgeLetter}
+                      {groupKey.startsWith('Grupo ') ? (
+                        groupKey.replace('Grupo ', '').trim().substring(0, 1)
+                      ) : (
+                        <Trophy size={14} weight="bold" />
+                      )}
                     </span>
                     <h3 className="text-xs sm:text-sm font-black text-primary uppercase tracking-widest select-none">
                       {groupKey}

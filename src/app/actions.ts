@@ -166,6 +166,7 @@ export async function getRanking(): Promise<RankingEntry[]> {
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, name, avatar_url, total_points, predictions_count, acertos_count, aproveitamento, rank_position')
+      .eq('is_admin', false)
       .order('rank_position', { ascending: true });
 
     if (error || !profiles) {
@@ -476,7 +477,7 @@ export async function registerUser(nickname: string, password: string) {
 /**
  * Cria uma nova sala privada com jogos e taxa de aposta (R$).
  */
-export async function createRoom(name: string, entryFee: number, matchIds: string[]) {
+export async function createRoom(name: string, entryFee: number, matchIds: string[], creatorParticipates: boolean = true) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -487,6 +488,7 @@ export async function createRoom(name: string, entryFee: number, matchIds: strin
     const trimmedName = name.trim();
     if (trimmedName.length < 3) return { success: false, error: 'Nome da sala deve ter pelo menos 3 caracteres.' };
     if (trimmedName.length > 50) return { success: false, error: 'Nome da sala deve ter no máximo 50 caracteres.' };
+    if (entryFee < 10.00) return { success: false, error: 'A taxa de entrada mínima é de R$ 10,00.' };
     if (matchIds.length === 0) return { success: false, error: 'Selecione pelo menos uma partida para esta sala.' };
 
     const { data: room, error: roomError } = await supabase
@@ -494,7 +496,8 @@ export async function createRoom(name: string, entryFee: number, matchIds: strin
       .insert({
         name: trimmedName,
         entry_fee: entryFee,
-        created_by: user.id
+        created_by: user.id,
+        creator_participates: creatorParticipates
       })
       .select('id')
       .single();
@@ -518,18 +521,20 @@ export async function createRoom(name: string, entryFee: number, matchIds: strin
       return { success: false, error: matchesError.message };
     }
 
-    const { error: participantError } = await supabase
-      .from('room_participants')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
-        payment_status: 'paid',
-      });
+    if (creatorParticipates) {
+      const { error: participantError } = await supabase
+        .from('room_participants')
+        .insert({
+          room_id: room.id,
+          user_id: user.id,
+          payment_status: 'pending',
+        });
 
-    if (participantError) {
-      const admin = createAdminClient();
-      await admin.from('rooms').delete().eq('id', room.id);
-      return { success: false, error: participantError.message };
+      if (participantError) {
+        const admin = createAdminClient();
+        await admin.from('rooms').delete().eq('id', room.id);
+        return { success: false, error: participantError.message };
+      }
     }
 
     revalidatePath('/');
@@ -601,6 +606,7 @@ export async function getUserRooms() {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.', rooms: [] };
 
+    // 1. Obter todas as salas que o usuário participa
     const { data: participantData, error: partError } = await supabase
       .from('room_participants')
       .select(`
@@ -610,19 +616,69 @@ export async function getUserRooms() {
           id,
           name,
           entry_fee,
-          created_by
+          created_by,
+          creator_participates,
+          finalized,
+          profiles (
+            name
+          )
         )
       `)
       .eq('user_id', user.id);
 
     if (partError) return { success: false, error: partError.message, rooms: [] };
 
-    const roomsList = [];
+    // 2. Obter todas as salas criadas pelo usuário (para garantir que apareçam mesmo se ele não participar)
+    const { data: createdRoomsData, error: createdError } = await supabase
+      .from('rooms')
+      .select('id, name, entry_fee, created_by, creator_participates, finalized, profiles(name)')
+      .eq('created_by', user.id);
 
+    if (createdError) return { success: false, error: createdError.message, rooms: [] };
+
+    const roomsMap = new Map<string, any>();
+
+    // Processar salas onde participa
     for (const p of (participantData || [])) {
       if (!p.rooms) continue;
       const roomInfo: any = p.rooms;
+      const creatorName = Array.isArray(roomInfo.profiles)
+        ? roomInfo.profiles[0]?.name
+        : (roomInfo.profiles as any)?.name;
 
+      roomsMap.set(roomInfo.id, {
+        id: roomInfo.id,
+        name: roomInfo.name,
+        entry_fee: Number(roomInfo.entry_fee),
+        created_by: roomInfo.created_by,
+        creator_name: creatorName || 'Participante',
+        creator_participates: roomInfo.creator_participates,
+        payment_status: p.payment_status,
+        finalized: roomInfo.finalized,
+      });
+    }
+
+    // Processar salas criadas (podem incluir salas onde ele não joga)
+    for (const roomInfo of (createdRoomsData || [])) {
+      if (roomsMap.has(roomInfo.id)) continue;
+      const creatorName = Array.isArray(roomInfo.profiles)
+        ? roomInfo.profiles[0]?.name
+        : (roomInfo.profiles as any)?.name;
+
+      roomsMap.set(roomInfo.id, {
+        id: roomInfo.id,
+        name: roomInfo.name,
+        entry_fee: Number(roomInfo.entry_fee),
+        created_by: roomInfo.created_by,
+        creator_name: creatorName || 'Participante',
+        creator_participates: roomInfo.creator_participates,
+        payment_status: 'non_participant',
+        finalized: roomInfo.finalized,
+      });
+    }
+
+    const roomsList = [];
+    for (const roomInfo of roomsMap.values()) {
       const { count: matchesCount } = await supabase
         .from('room_matches')
         .select('*', { count: 'exact', head: true })
@@ -633,14 +689,34 @@ export async function getUserRooms() {
         .select('*', { count: 'exact', head: true })
         .eq('room_id', roomInfo.id);
 
+      const { count: paidCount } = await supabase
+        .from('room_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('room_id', roomInfo.id)
+        .eq('payment_status', 'paid');
+
+      const entryFeeValue = Number(roomInfo.entry_fee) || 0;
+      const totalAmountRaised = entryFeeValue * (paidCount || 0);
+
+      let isWinner = false;
+      if (roomInfo.finalized) {
+        const rankingResult = await getRoomRanking(roomInfo.id);
+        if (rankingResult.success && rankingResult.ranking && rankingResult.ranking.length > 0) {
+          const topScore = rankingResult.ranking[0].total_points;
+          const userEntry = rankingResult.ranking.find((r) => r.user_id === user.id);
+          if (userEntry && userEntry.total_points === topScore) {
+            isWinner = true;
+          }
+        }
+      }
+
       roomsList.push({
-        id: roomInfo.id,
-        name: roomInfo.name,
-        entry_fee: Number(roomInfo.entry_fee),
-        created_by: roomInfo.created_by,
-        payment_status: p.payment_status,
+        ...roomInfo,
         matches_count: matchesCount || 0,
         participants_count: participantsCount || 0,
+        paid_participants_count: paidCount || 0,
+        total_amount_raised: totalAmountRaised,
+        is_winner: isWinner,
       });
     }
 
@@ -745,14 +821,15 @@ export async function getRoomRanking(roomId: string) {
         profiles (
           id,
           name,
-          avatar_url
+          avatar_url,
+          is_admin
         )
       `)
       .eq('room_id', roomId)
       .eq('payment_status', 'paid');
 
     const paidParticipants = (rpData || [])
-      .filter((rp) => rp.profiles !== null)
+      .filter((rp) => rp.profiles !== null && !(rp.profiles as any).is_admin)
       .map((rp: any) => ({
         user_id: rp.user_id,
         name: rp.profiles.name,
@@ -775,8 +852,8 @@ export async function getRoomRanking(roomId: string) {
 
     const ranking: RankingEntry[] = paidParticipants.map((p) => {
       const userPreds = predictions.filter((pred) => pred.user_id === p.user_id);
-      // Nas salas, a única pontuação que vale é quem acertar o placar exato (3 pontos no banco)
-      const totalPoints = userPreds.reduce((sum, pred) => sum + (pred.points === 3 ? 3 : 0), 0);
+      // Somar a pontuação de todos os palpites conforme as regras reais (3, 2, 1, 0)
+      const totalPoints = userPreds.reduce((sum, pred) => sum + (pred.points || 0), 0);
       const predictionsCount = userPreds.length;
       const acertosCount = userPreds.filter((pred) => pred.points === 3).length;
       const aproveitamento = predictionsCount > 0 
@@ -1259,8 +1336,9 @@ export async function finalizeRoom(roomId: string) {
 
     const entryFee = Number(room.entry_fee);
 
-    // Criador da sala não paga entry_fee
-    const paidParticipantsCount = participants.filter(p => p.user_id !== room.created_by).length;
+    // O criador agora paga a entrada se escolheu participar.
+    // O total arrecadado é baseado em todos os participantes pagos.
+    const paidParticipantsCount = participants.length;
     const totalCollected = paidParticipantsCount * entryFee;
 
     // Premiação é exatamente 80% do valor total arrecadado
@@ -1792,6 +1870,38 @@ export async function fetchAndUpdateMatchResults(bypassCronSecret?: string) {
   } catch (error: any) {
     console.error('[API-Football Sync] Erro inesperado na sincronização:', error);
     return { success: false, error: error.message || 'Erro ao sincronizar resultados.' };
+  }
+}
+
+/**
+ * Busca detalhes de uma sala para a página de convite/entrada.
+ */
+export async function getRoomInviteDetails(roomId: string) {
+  try {
+    const admin = createAdminClient();
+    const { data: room, error } = await admin
+      .from('rooms')
+      .select('id, name, entry_fee, created_by, profiles(name)')
+      .eq('id', roomId)
+      .single();
+
+    if (error || !room) return { success: false, error: 'Sala não encontrada.' };
+    
+    const creatorName = Array.isArray(room.profiles)
+      ? room.profiles[0]?.name
+      : (room.profiles as any)?.name;
+
+    return {
+      success: true,
+      room: {
+        id: room.id,
+        name: room.name,
+        entry_fee: Number(room.entry_fee),
+        creator_name: creatorName || 'Participante',
+      }
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Erro inesperado.' };
   }
 }
 

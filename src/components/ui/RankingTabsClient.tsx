@@ -16,9 +16,14 @@ interface Room {
   name: string;
   entry_fee: number;
   created_by: string;
+  creator_name: string;
   payment_status: string;
   matches_count: number;
   participants_count: number;
+  paid_participants_count?: number;
+  total_amount_raised?: number;
+  finalized: boolean;
+  is_winner?: boolean;
 }
 
 interface RankingTabsClientProps {
@@ -63,7 +68,7 @@ export default function RankingTabsClient({
   isFinancialRegistered,
 }: RankingTabsClientProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'geral' | 'salas' | 'regulamento'>('geral');
+  const [activeTab, setActiveTab] = useState<'salas' | 'regulamento'>('salas');
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [rooms, setRooms] = useState<Room[]>(initialRooms);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -170,6 +175,40 @@ export default function RankingTabsClient({
       supabase.removeChannel(channel);
     };
   }, [selectedRoomId, currentUserId]);
+
+  // Sincronização em tempo real do pagamento Pix do usuário
+  useEffect(() => {
+    if (!showPixModal || !selectedRoomId || !currentUserId) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`payment_sync_${selectedRoomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'room_participants',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        (payload: any) => {
+          if (payload.new && payload.new.room_id === selectedRoomId && payload.new.payment_status === 'paid') {
+            setPaymentSuccess(true);
+            setIsSimulatingPayment(false);
+            setTimeout(() => {
+              setShowPixModal(false);
+              setPaymentSuccess(false);
+              refreshRooms();
+            }, 3000);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [showPixModal, selectedRoomId, currentUserId]);
 
   // Refresh user rooms list
   const refreshRooms = async () => {
@@ -281,15 +320,6 @@ export default function RankingTabsClient({
       {/* Abas Superiores */}
       <div className="flex border border-border-custom/50 bg-muted/40 p-1 rounded-2xl gap-1">
         <button
-          onClick={() => setActiveTab('geral')}
-          className={`flex-grow py-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer ${
-            activeTab === 'geral' ? 'bg-accent-custom text-slate-950 shadow-md' : 'text-secondary hover:text-primary'
-          }`}
-        >
-          <Trophy size={14} />
-          Geral
-        </button>
-        <button
           onClick={() => setActiveTab('salas')}
           className={`flex-grow py-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer ${
             activeTab === 'salas' ? 'bg-accent-custom text-slate-950 shadow-md' : 'text-secondary hover:text-primary'
@@ -308,11 +338,6 @@ export default function RankingTabsClient({
           Regulamento
         </button>
       </div>
-
-      {/* Conteúdo Geral */}
-      {activeTab === 'geral' && (
-        <RankingTable ranking={globalRanking} currentUserId={currentUserId} totalMatches={totalMatches} />
-      )}
 
       {/* Conteúdo de Salas */}
       {activeTab === 'salas' && (
@@ -359,26 +384,111 @@ export default function RankingTabsClient({
           ) : (
             /* Com Salas */
             <div className="space-y-5">
-              {/* Seletor de Sala e Botão de Criar */}
-              <div className="flex gap-2">
-                <select
-                  value={selectedRoomId || ''}
-                  onChange={(e) => setSelectedRoomId(e.target.value)}
-                  className="flex-grow h-11 px-3 bg-card border border-border-custom text-primary text-xs font-bold rounded-xl focus:outline-none focus:border-accent-custom transition-all"
-                >
-                  {rooms.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {room.name} {room.entry_fee > 0 ? `(R$ ${room.entry_fee.toFixed(2)})` : '(Grátis)'}
-                    </option>
-                  ))}
-                </select>
-                <Link
-                  href="/salas/criar"
-                  className="h-11 px-3.5 bg-card hover:bg-muted/40 border border-border-custom text-accent-custom rounded-xl flex items-center justify-center transition-all shrink-0 cursor-pointer"
-                  title="Criar Nova Sala"
-                >
-                  <Plus size={18} weight="bold" />
-                </Link>
+              {/* Lista de Salas em formato de Cards menores */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-secondary">
+                    Minhas Ligas Ativas ({rooms.length})
+                  </h4>
+                  <Link
+                    href="/salas/criar"
+                    className="h-9 px-3 bg-accent-custom hover:bg-accent-hover text-slate-950 rounded-xl flex items-center justify-center gap-1.5 transition-all text-[10px] font-black uppercase tracking-wider cursor-pointer"
+                  >
+                    <Plus size={14} weight="bold" />
+                    Criar Sala
+                  </Link>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {rooms.map((room) => {
+                    const isSelected = room.id === selectedRoomId;
+                    const totalArrecadado = room.total_amount_raised || 0;
+                    
+                    // Render do Badge de Status
+                    let statusLabel = 'Participando';
+                    let statusColor = 'bg-green-500/10 text-green-500 border-green-500/20';
+                    
+                    if (room.is_winner) {
+                      statusLabel = 'Você Ganhou! 🏆';
+                      statusColor = 'bg-amber-500/20 text-amber-400 border-amber-500/40 font-extrabold animate-pulse';
+                    } else if (room.finalized) {
+                      statusLabel = 'Finalizada 🏆';
+                      statusColor = 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+                    } else if (room.payment_status === 'pending') {
+                      statusLabel = 'Pendente ⚠️';
+                      statusColor = 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+                    } else if (room.payment_status === 'non_participant') {
+                      statusLabel = 'Apenas Admin 👑';
+                      statusColor = 'bg-purple-500/10 text-purple-500 border-purple-500/20';
+                    }
+
+                    return (
+                      <div
+                        key={room.id}
+                        onClick={() => setSelectedRoomId(room.id)}
+                        className={`p-3.5 border rounded-2xl cursor-pointer transition-all duration-200 flex flex-col justify-between gap-2.5 relative overflow-hidden group hover:translate-y-[-2px] ${
+                          isSelected
+                            ? room.is_winner
+                              ? 'bg-amber-500/10 border-amber-500 shadow-lg shadow-amber-500/20'
+                              : 'bg-accent-custom/5 border-accent-custom shadow-md shadow-accent-custom/5'
+                            : room.is_winner
+                              ? 'bg-amber-500/5 border-amber-500/30 hover:border-amber-500/60 shadow shadow-amber-500/5'
+                              : 'bg-card border-border-custom hover:border-border-custom-hover hover:bg-muted/10'
+                        }`}
+                      >
+                        {/* Background light glow effect on hover/selected */}
+                        <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl pointer-events-none transition-all duration-300 ${
+                          room.is_winner
+                            ? 'bg-amber-500/15'
+                            : isSelected ? 'bg-accent-custom/10' : 'bg-transparent group-hover:bg-primary/5'
+                        }`} />
+
+                        {/* Top Line: Name and Status Badge */}
+                        <div className="flex justify-between items-start gap-2 min-w-0">
+                          <h5 className={`text-[11px] font-black uppercase tracking-wider truncate min-w-0 transition-colors ${
+                            room.is_winner
+                              ? 'text-amber-400 group-hover:text-amber-300'
+                              : 'text-primary group-hover:text-accent-custom'
+                          }`}>
+                            {room.name}
+                          </h5>
+                          <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md border shrink-0 select-none ${statusColor}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+
+                        {/* Middle info */}
+                        <div className="text-[10px] space-y-1 text-secondary font-bold">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] uppercase tracking-wider text-secondary/60">Dono:</span>
+                            <span className="text-primary truncate max-w-[120px]">{room.creator_name}</span>
+                          </div>
+                          {room.entry_fee > 0 ? (
+                            <div className={`flex items-center gap-1 ${room.is_winner ? 'text-amber-400' : 'text-accent-custom'}`}>
+                              <span>Acumulado:</span>
+                              <span className="font-extrabold text-primary">R$ {totalArrecadado.toFixed(2)}</span>
+                            </div>
+                          ) : (
+                            <div className="text-green-500">
+                              Bolão Gratuito
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom Info: Members and Matches count */}
+                        <div className="flex items-center justify-between border-t border-border-custom/30 pt-2 text-[9px] text-secondary font-bold">
+                          <span className="flex items-center gap-1">
+                            <Users size={12} />
+                            {room.participants_count} {room.participants_count === 1 ? 'membro' : 'membros'}
+                          </span>
+                          <span>
+                            {room.matches_count} {room.matches_count === 1 ? 'jogo' : 'jogos'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {selectedRoom && (
@@ -520,7 +630,7 @@ export default function RankingTabsClient({
                           <ul className="space-y-2 text-[10px] font-semibold text-secondary leading-normal">
                             <li className="flex items-start gap-1.5">
                               <span className="text-accent-custom shrink-0">•</span>
-                              <span>Apenas acertos de <strong>placar exato</strong> somam pontos (3 pts). Outros resultados valem 0.</span>
+                              <span><strong>Pontuação:</strong> Placar Exato = 3 pts; Vencedor + Saldo = 2 pts; Vencedor/Empate não-exato = 1 pt.</span>
                             </li>
                             <li className="flex items-start gap-1.5">
                               <span className="text-accent-custom shrink-0">•</span>
@@ -529,6 +639,10 @@ export default function RankingTabsClient({
                             <li className="flex items-start gap-1.5">
                               <span className="text-accent-custom shrink-0">•</span>
                               <span>Se ninguém pontuar, a premiação vai para o <strong>dono/criador do bolão</strong>.</span>
+                            </li>
+                            <li className="flex items-start gap-1.5">
+                              <span className="text-accent-custom shrink-0">•</span>
+                              <span>A premiação é creditada no <strong>dia seguinte</strong> e os resultados são atualizados diariamente às <strong>7h da manhã</strong>.</span>
                             </li>
                             <li className="flex items-start gap-1.5">
                               <span className="text-accent-custom shrink-0">•</span>
@@ -577,6 +691,7 @@ export default function RankingTabsClient({
                           ranking={roomRanking}
                           currentUserId={currentUserId}
                           totalMatches={selectedRoom.matches_count}
+                          isRoomFinalized={selectedRoom.finalized}
                         />
                       )}
                     </div>
@@ -599,28 +714,44 @@ export default function RankingTabsClient({
           <div className="space-y-4">
             <div className="p-3 bg-muted/20 border border-border-custom/40 rounded-xl space-y-1">
               <span className="text-accent-custom font-extrabold text-[10px] uppercase tracking-wider block">
-                🎯 Critério de Pontuação Exclusivo
+                🎯 Critérios de Pontuação
               </span>
               <p className="text-[11px] text-secondary leading-relaxed font-semibold">
-                Nas salas privadas, você só ganha pontos ao acertar o **placar exato** da partida (concede 3 pontos). Acertos parciais (vencedor com saldo errado ou empate não exato) valem **0 pontos**.
+                Seus palpites acumulam pontos das seguintes formas:
+                <br />• <strong>3 pontos:</strong> Acerto do placar exato da partida.
+                <br />• <strong>2 pontos:</strong> Acerto do vencedor e saldo de gols (exceto empate).
+                <br />• <strong>1 ponto:</strong> Acerto apenas do vencedor ou do empate não-exato.
+                <br />• <strong>0 pontos:</strong> Erro total do resultado.
               </p>
             </div>
 
             <div className="p-3 bg-muted/20 border border-border-custom/40 rounded-xl space-y-1">
               <span className="text-accent-custom font-extrabold text-[10px] uppercase tracking-wider block">
-                💰 Divisão da Premiação (80%)
+                💰 Divisão da Premiação e Comissões
               </span>
               <p className="text-[11px] text-secondary leading-relaxed font-semibold">
-                80% de todo o valor arrecadado na sala via Pix é destinado para a premiação dos ganhadores da sala (dividido igualmente em caso de empate no 1º lugar, desde que tenham pontos). Os 20% restantes cobrem taxas administrativas da plataforma.
+                O prêmio de 80% do arrecadado é dividido igualmente entre todos na 1ª posição do ranking (com pontos &gt; 0). 
+                <br />• <strong>Criador Jogando:</strong> Paga a taxa de entrada. Premiação = 80%; Plataforma = 20%.
+                <br />• <strong>Criador Não Jogando:</strong> Não paga entrada. Recebe 10% de comissão das inscrições; Plataforma = 10%; Ganhadores = 80%.
               </p>
             </div>
 
             <div className="p-3 bg-muted/20 border border-border-custom/40 rounded-xl space-y-1">
               <span className="text-accent-custom font-extrabold text-[10px] uppercase tracking-wider block">
-                👑 Acúmulo para o Criador da Sala
+                👑 Acúmulo para o Criador da Sala (Caso sem Ganhador)
               </span>
               <p className="text-[11px] text-secondary leading-relaxed font-semibold">
-                Caso nenhum participante da sala consiga acertar nenhum placar exato, o valor da premiação acumulada (80%) será integralmente transferido para o criador/dono da sala.
+                Se nenhum participante conseguir pontuar ao final do bolão, o prêmio acumulado de 80% será revertido integralmente para o criador/dono da sala, e 20% fica retido pela plataforma.
+              </p>
+            </div>
+
+            <div className="p-3 bg-muted/20 border border-border-custom/40 rounded-xl space-y-1">
+              <span className="text-accent-custom font-extrabold text-[10px] uppercase tracking-wider block">
+                ⏰ Sincronização & Pagamento do Prêmio
+              </span>
+              <p className="text-[11px] text-secondary leading-relaxed font-semibold">
+                • Os resultados dos jogos no aplicativo são atualizados diariamente sempre às <strong>7h da manhã</strong>.
+                <br />• A premiação das salas será creditada no saldo da carteira do(s) vencedor(es) no <strong>dia seguinte</strong> ao encerramento oficial de todas as partidas da sala.
               </p>
             </div>
 
@@ -642,110 +773,124 @@ export default function RankingTabsClient({
           <div className="w-full max-w-sm bg-card border border-border-custom rounded-2xl p-6 shadow-2xl relative overflow-hidden transition-all duration-300">
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-accent-custom/5 rounded-full blur-3xl pointer-events-none" />
 
-            <div className="text-center mb-5">
-              <h3 className="text-base font-black text-primary uppercase tracking-wider flex items-center justify-center gap-2">
-                <QrCode size={20} className="text-accent-custom" />
-                Pagamento via Pix
-              </h3>
-              <p className="text-[11px] text-secondary mt-1 font-bold uppercase tracking-wider">
-                Inscrição: {selectedRoom.name}
-              </p>
-            </div>
-
-            {/* Valor */}
-            <div className="bg-base border border-border-custom/50 rounded-xl p-3.5 text-center mb-5 select-none">
-              <span className="text-[10px] font-black text-secondary uppercase tracking-widest block">Valor Cobrado</span>
-              <span className="text-2xl font-black text-accent-custom tracking-wider block mt-1">
-                R$ {selectedRoom.entry_fee.toFixed(2)}
-              </span>
-            </div>
-
-            {/* QR Code Real/Carregamento */}
-            <div className="flex flex-col items-center justify-center bg-white border border-slate-200 p-4 rounded-xl mb-5 mx-auto w-48 h-48 select-none relative">
-              {isLoadingPix ? (
-                <div className="flex flex-col items-center gap-2 text-slate-900">
-                  <Spinner size={32} className="animate-spin text-accent-custom" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Gerando Pix...</span>
+            {paymentSuccess ? (
+              <div className="flex flex-col items-center justify-center py-8 space-y-5 text-center animate-scaleUp select-none">
+                <div className="w-20 h-20 bg-green-500/10 text-green-500 border-2 border-green-500/30 rounded-full flex items-center justify-center text-4xl shadow-lg shadow-green-500/10 animate-bounce">
+                  <CheckCircle size={44} weight="fill" />
                 </div>
-              ) : pixError ? (
-                <div className="text-red-500 text-center text-[10px] font-bold p-2">
-                  {pixError}
-                </div>
-              ) : pixQrCode ? (
-                <img
-                  src={`data:image/png;base64,${pixQrCode}`}
-                  alt="QR Code Pix"
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <div className="text-slate-400 text-center text-[10px] font-bold">
-                  Nenhum QR Code gerado.
-                </div>
-              )}
-            </div>
-
-            {/* Instruções */}
-            <div className="space-y-4">
-              <button
-                onClick={handleCopyPix}
-                disabled={isLoadingPix || !!pixError || isSimulatingPayment || paymentSuccess}
-                className="w-full h-11 flex items-center justify-center gap-2 bg-accent-custom hover:bg-accent-hover text-slate-950 text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
-              >
-                {pixCopied ? (
-                  <>
-                    <Check size={16} weight="bold" />
-                    Chave Copiada!
-                  </>
-                ) : (
-                  <>
-                    <Clipboard size={16} />
-                    Copiar Pix Copia e Cola
-                  </>
-                )}
-              </button>
-
-              {/* Status de Simulação */}
-              {isSimulatingPayment && (
-                <div className="flex items-center justify-center gap-2.5 text-xs text-amber-500 font-extrabold text-center py-2 select-none animate-pulse">
-                  <Spinner size={16} className="animate-spin shrink-0" />
-                  Aguardando confirmação do Pix...
-                </div>
-              )}
-
-              {paymentSuccess && (
-                <div className="flex items-center justify-center gap-2 text-xs text-green-500 font-extrabold text-center py-2 select-none">
-                  <CheckCircle size={18} weight="fill" className="shrink-0" />
-                  Pagamento Confirmado com Sucesso!
-                </div>
-              )}
-
-              {!isSimulatingPayment && !paymentSuccess && (
-                <div className="space-y-2 border-t border-border-custom/45 pt-3.5">
-                  <div className="flex items-center gap-1.5 text-amber-500 text-[9px] font-black uppercase tracking-wider">
-                    <Warning size={12} />
-                    Ambiente de Teste (Sandbox)
-                  </div>
-                  <p className="text-[10px] text-secondary leading-relaxed font-medium">
-                    Como estamos no ambiente de homologação do Asaas, este QR Code é fictício e <strong>não funcionará em aplicativos de bancos reais</strong>. 
-                    Clique no botão abaixo para simular o pagamento e confirmar instantaneamente!
+                <div className="space-y-2">
+                  <h3 className="text-lg font-black text-green-500 uppercase tracking-wider">
+                    Pagamento Confirmado!
+                  </h3>
+                  <p className="text-[11px] text-secondary font-semibold max-w-[260px] mx-auto leading-relaxed">
+                    Sua inscrição na sala <strong className="text-primary">{selectedRoom.name}</strong> foi confirmada com sucesso!
                   </p>
+                  <p className="text-[10px] text-secondary/70 font-semibold pt-1">
+                    Seus palpites agora estão valendo pontos no ranking.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="text-center mb-5">
+                  <h3 className="text-base font-black text-primary uppercase tracking-wider flex items-center justify-center gap-2">
+                    <QrCode size={20} className="text-accent-custom" />
+                    Pagamento via Pix
+                  </h3>
+                  <p className="text-[11px] text-secondary mt-1 font-bold uppercase tracking-wider">
+                    Inscrição: {selectedRoom.name}
+                  </p>
+                </div>
+
+                {/* Valor */}
+                <div className="bg-base border border-border-custom/50 rounded-xl p-3.5 text-center mb-5 select-none">
+                  <span className="text-[10px] font-black text-secondary uppercase tracking-widest block">Valor Cobrado</span>
+                  <span className="text-2xl font-black text-accent-custom tracking-wider block mt-1">
+                    R$ {selectedRoom.entry_fee.toFixed(2)}
+                  </span>
+                </div>
+
+                {/* QR Code Real/Carregamento */}
+                <div className="flex flex-col items-center justify-center bg-white border border-slate-200 p-4 rounded-xl mb-5 mx-auto w-48 h-48 select-none relative">
+                  {isLoadingPix ? (
+                    <div className="flex flex-col items-center gap-2 text-slate-900">
+                      <Spinner size={32} className="animate-spin text-accent-custom" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Gerando Pix...</span>
+                    </div>
+                  ) : pixError ? (
+                    <div className="text-red-500 text-center text-[10px] font-bold p-2">
+                      {pixError}
+                    </div>
+                  ) : pixQrCode ? (
+                    <img
+                      src={`data:image/png;base64,${pixQrCode}`}
+                      alt="QR Code Pix"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <div className="text-slate-400 text-center text-[10px] font-bold">
+                      Nenhum QR Code gerado.
+                    </div>
+                  )}
+                </div>
+
+                {/* Instruções */}
+                <div className="space-y-4">
                   <button
-                    onClick={handleManualConfirm}
-                    className="w-full h-9 flex items-center justify-center bg-muted hover:bg-muted/80 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-border-custom/60 transition-colors cursor-pointer"
+                    onClick={handleCopyPix}
+                    disabled={isLoadingPix || !!pixError || isSimulatingPayment}
+                    className="w-full h-11 flex items-center justify-center gap-2 bg-accent-custom hover:bg-accent-hover text-slate-950 text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
                   >
-                    Simular Confirmação Instantânea
+                    {pixCopied ? (
+                      <>
+                        <Check size={16} weight="bold" />
+                        Chave Copiada!
+                      </>
+                    ) : (
+                      <>
+                        <Clipboard size={16} />
+                        Copiar Pix Copia e Cola
+                      </>
+                    )}
+                  </button>
+
+                  {/* Status de Simulação */}
+                  {isSimulatingPayment && (
+                    <div className="flex items-center justify-center gap-2.5 text-xs text-amber-500 font-extrabold text-center py-2 select-none animate-pulse">
+                      <Spinner size={16} className="animate-spin shrink-0" />
+                      Aguardando confirmação do Pix...
+                    </div>
+                  )}
+
+                  {!isSimulatingPayment && (
+                    <div className="space-y-2 border-t border-border-custom/45 pt-3.5">
+                      <div className="flex items-center gap-1.5 text-amber-500 text-[9px] font-black uppercase tracking-wider">
+                        <Warning size={12} />
+                        Ambiente de Teste (Sandbox)
+                      </div>
+                      <p className="text-[10px] text-secondary leading-relaxed font-medium">
+                        Como estamos no ambiente de homologação do Asaas, este QR Code é fictício e <strong>não funcionará em aplicativos de bancos reais</strong>. 
+                        Clique no botão abaixo para simular o pagamento e confirmar instantaneamente!
+                      </p>
+                      <button
+                        onClick={handleManualConfirm}
+                        className="w-full h-9 flex items-center justify-center bg-muted hover:bg-muted/80 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-border-custom/60 transition-colors cursor-pointer"
+                      >
+                        Simular Confirmação Instantânea
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setShowPixModal(false)}
+                    disabled={isSimulatingPayment}
+                    className="w-full h-9 flex items-center justify-center text-secondary hover:text-primary text-[10px] font-black uppercase tracking-wider transition-colors cursor-pointer"
+                  >
+                    Cancelar e Fechar
                   </button>
                 </div>
-              )}
-
-              <button
-                onClick={() => setShowPixModal(false)}
-                disabled={isSimulatingPayment}
-                className="w-full h-9 flex items-center justify-center text-secondary hover:text-primary text-[10px] font-black uppercase tracking-wider transition-colors cursor-pointer"
-              >
-                Cancelar e Fechar
-              </button>
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}

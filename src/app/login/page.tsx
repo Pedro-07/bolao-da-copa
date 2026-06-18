@@ -202,7 +202,7 @@ function LoginForm() {
 
           <button
             type="submit"
-            disabled={isTransitionPending || !nickname || !password}
+            disabled={isTransitionPending}
             className="w-full h-12 flex items-center justify-center gap-2 bg-gradient-to-r from-accent-custom to-accent-hover text-slate-950 text-sm font-extrabold uppercase tracking-wider rounded-xl shadow-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             {isTransitionPending ? (

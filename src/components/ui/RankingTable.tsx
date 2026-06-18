@@ -8,6 +8,7 @@ interface RankingTableProps {
   ranking: RankingEntry[];
   currentUserId?: string | null;
   totalMatches?: number;
+  isRoomFinalized?: boolean;
 }
 
 const colors = [
@@ -26,7 +27,7 @@ const getAvatarStyle = (name: string) => {
   return colors[code % colors.length];
 };
 
-export default function RankingTable({ ranking, currentUserId, totalMatches }: RankingTableProps) {
+export default function RankingTable({ ranking, currentUserId, totalMatches, isRoomFinalized = false }: RankingTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
 
   if (ranking.length === 0) {
@@ -97,6 +98,7 @@ export default function RankingTable({ ranking, currentUserId, totalMatches }: R
                 const pos = originalIndex !== -1 ? originalIndex + 1 : 0;
                 const isCurrentUser = currentUserId === entry.user_id;
                 const avatarStyle = getAvatarStyle(entry.name);
+                const isWinner = pos === 1 && entry.total_points > 0;
 
                 // Top 3 premium badges
                 let rankBadge = (
@@ -161,8 +163,8 @@ export default function RankingTable({ ranking, currentUserId, totalMatches }: R
                         <div className="flex flex-col min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span
-                              style={{ color: isCurrentUser ? undefined : 'var(--text-primary)' }}
-                              className={`truncate ${isCurrentUser ? 'text-accent-custom font-extrabold' : ''}`}
+                              style={{ color: isCurrentUser ? 'var(--accent)' : 'var(--text-primary)' }}
+                              className={`truncate ${isCurrentUser ? 'font-extrabold' : ''}`}
                             >
                               {entry.name}
                             </span>
@@ -172,13 +174,21 @@ export default function RankingTable({ ranking, currentUserId, totalMatches }: R
                               </span>
                             )}
                           </div>
-                          <span className={`text-[9px] font-bold sm:hidden mt-0.5 select-none shrink-0 ${
-                            entry.aproveitamento >= 70 ? 'text-green-500' :
-                            entry.aproveitamento >= 40 ? 'text-amber-500' :
-                            entry.predictions_count === 0 ? 'text-secondary' : 'text-red-400'
-                          }`}>
-                            {entry.predictions_count === 0 ? 'sem palpites' : `${entry.aproveitamento}% de aproveitamento`}
-                          </span>
+                          {isRoomFinalized && isWinner ? (
+                            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-wider mt-0.5 flex items-center gap-0.5 select-none shrink-0 animate-pulse">
+                              <Trophy size={10} weight="fill" />
+                              Ganhador
+                            </span>
+                          ) : (
+                            entry.predictions_count > 0 && (
+                              <span className={`text-[9px] font-bold sm:hidden mt-0.5 select-none shrink-0 ${
+                                entry.aproveitamento >= 70 ? 'text-green-500' :
+                                entry.aproveitamento >= 40 ? 'text-amber-500' : 'text-red-400'
+                              }`}>
+                                {entry.aproveitamento}% de aproveitamento
+                              </span>
+                            )
+                          )}
                         </div>
                       </div>
                     </td>
@@ -197,10 +207,8 @@ export default function RankingTable({ ranking, currentUserId, totalMatches }: R
                     {/* Pontos */}
                     <td className="py-3 px-4 text-right">
                       <span
-                        style={{ color: isCurrentUser ? undefined : 'var(--text-primary)' }}
-                        className={`text-base font-black tracking-wider ${
-                          isCurrentUser ? 'text-accent-custom' : ''
-                        }`}
+                        style={{ color: isCurrentUser ? 'var(--accent)' : 'var(--text-primary)' }}
+                        className="text-base font-black tracking-wider"
                       >
                         {entry.total_points}
                       </span>

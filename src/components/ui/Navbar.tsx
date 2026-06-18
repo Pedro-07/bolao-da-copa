@@ -146,13 +146,20 @@ export default function Navbar() {
             <div className="flex md:hidden items-center gap-2">
               <ThemeToggle />
               
-              {user && (
+              {user ? (
                 <Link
                   href="/perfil"
                   className="w-12 h-12 flex items-center justify-center rounded-xl bg-muted text-accent-custom border border-border-custom font-extrabold focus:outline-none"
                   aria-label="Ir para Perfil"
                 >
                   <User size={20} weight="bold" />
+                </Link>
+              ) : (
+                <Link
+                  href="/login"
+                  className="h-11 px-3 bg-gradient-to-r from-accent-custom to-accent-hover text-slate-950 text-[10px] font-extrabold uppercase tracking-wider rounded-xl shadow-md flex items-center justify-center transition-all duration-200"
+                >
+                  Entrar
                 </Link>
               )}
 

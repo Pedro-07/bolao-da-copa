@@ -6,6 +6,7 @@ import RankingTabsClient from '@/components/ui/RankingTabsClient';
 import { Match, Prediction } from '@/types';
 import Link from 'next/link';
 import { isSameDayInSaoPaulo } from '@/lib/date';
+import { SoccerBall } from '@phosphor-icons/react/dist/ssr';
 
 export const dynamic = 'force-dynamic';
 
@@ -173,8 +174,9 @@ export default async function HomePage() {
           {/* Seção Jogos de Hoje */}
           <div className="space-y-6">
             <div className="flex items-center justify-between border-b border-border-custom pb-3">
-              <h2 className="text-lg font-black text-primary uppercase tracking-wider select-none">
-                Jogos de Hoje ⚽
+              <h2 className="text-lg font-black text-primary uppercase tracking-wider select-none flex items-center gap-2">
+                <SoccerBall size={20} weight="fill" className="text-accent-custom" />
+                Jogos de Hoje
               </h2>
               <Link
                 href="/palpites"
@@ -242,7 +244,7 @@ export default async function HomePage() {
                 </span>
                 <div className="text-xs space-y-0.5">
                   <p className="font-extrabold text-primary">Vencedor + Diferença</p>
-                  <p className="text-secondary text-[11px] leading-relaxed">Acertou vencedor e saldo de gols (exeto empate). Ex: palpite 3x1 e final 2x0.</p>
+                  <p className="text-secondary text-[11px] leading-relaxed">Acertou vencedor e saldo de gols (exceto empate). Ex: palpite 3x1 e final 2x0.</p>
                 </div>
               </div>
 

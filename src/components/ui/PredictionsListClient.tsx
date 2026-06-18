@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import FlagTeam from './FlagTeam';
 import { Match } from '@/types';
-import { CaretDown, CaretUp, MagnifyingGlass } from '@phosphor-icons/react';
+import { CaretDown, CaretUp, MagnifyingGlass, Trophy } from '@phosphor-icons/react';
 import { formatMatchDate, formatMatchTime } from '@/lib/date';
 
 interface PredictionItem {
@@ -276,7 +276,11 @@ export default function PredictionsListClient({
                 {/* Header do Grupo */}
                 <div className="flex items-center gap-2.5 pt-2">
                   <span className="w-6 h-6 flex items-center justify-center rounded-full bg-amber-500 text-slate-950 font-black text-xs uppercase shrink-0 select-none shadow-sm">
-                    {badgeLetter}
+                    {groupKey.startsWith('Grupo ') ? (
+                      groupKey.replace('Grupo ', '').trim().substring(0, 1)
+                    ) : (
+                      <Trophy size={12} weight="bold" />
+                    )}
                   </span>
                   <h3 className="text-xs sm:text-sm font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest select-none">
                     {groupKey}

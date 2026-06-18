@@ -4,10 +4,36 @@ import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Match } from '@/types';
 import { createRoom } from '@/app/actions';
-import { Trophy, ArrowLeft, Check, SquaresFour, Circle, CheckCircle, Warning, Coins, Info, Bank } from '@phosphor-icons/react';
+import { Trophy, ArrowLeft, Check, SquaresFour, Circle, CheckCircle, Warning, Coins, Info, Bank, Clock, ShareNetwork, WhatsappLogo, Clipboard, X } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import FinancialRegistrationModal from './FinancialRegistrationModal';
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {}
+  }
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch (err) {
+    return false;
+  }
+}
 
 interface CreateRoomClientProps {
   matches: Match[];
@@ -20,8 +46,11 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
   const [entryFeeMode, setEntryFeeMode] = useState<'predefined' | 'custom'>('predefined');
   const [predefinedFee, setPredefinedFee] = useState<number>(10);
   const [customFee, setCustomFee] = useState('');
+  const [creatorParticipates, setCreatorParticipates] = useState(true);
   const [activeViewTab, setActiveViewTab] = useState<'config' | 'rules'>('config');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [createdRoomInfo, setCreatedRoomInfo] = useState<{ id: string; name: string } | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
   
   // Inicia com todos os jogos selecionados por padrão
   const [selectedMatchIds, setSelectedMatchIds] = useState<Record<string, boolean>>(() => {
@@ -112,18 +141,17 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
     }
 
     const feeValue = getFinalFeeValue();
-    if (feeValue <= 0) {
-      setErrorMsg('A taxa de entrada da sala deve ser maior que R$ 0,00.');
+    if (feeValue < 10.00) {
+      setErrorMsg('A taxa de entrada mínima para a sala é de R$ 10,00.');
       return;
     }
 
     startTransition(async () => {
-      const result = await createRoom(name, feeValue, selectedIds);
+      const result = await createRoom(name, feeValue, selectedIds, creatorParticipates);
       if (!result.success) {
         setErrorMsg(result.error || 'Erro ao criar a sala.');
       } else {
-        router.push(`/?tab=salas&roomId=${result.roomId}`);
-        router.refresh();
+        setCreatedRoomInfo({ id: result.roomId || '', name });
       }
     });
   };
@@ -187,20 +215,20 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
             <div className="p-4 bg-muted/20 border border-border-custom/40 rounded-xl space-y-2">
               <div className="flex items-center gap-2 text-accent-custom font-extrabold text-xs uppercase tracking-wider">
                 <Trophy size={16} />
-                Pontuação: Apenas Placar Exato
+                Pontuação Dinâmica
               </div>
               <p className="text-[11px] text-secondary leading-relaxed font-semibold">
-                Nas salas privadas, a única pontuação válida é o acerto exato do placar final de um jogo (vale 3 pontos). Acertos parciais (apenas o vencedor ou empates não exatos) valem 0 pontos.
+                Seus palpites acumulam pontos de forma proporcional: <strong>3 pontos</strong> por placar exato, <strong>2 pontos</strong> por acerto de vencedor e diferença de gols (exceto empate), e <strong>1 ponto</strong> por acerto de vencedor ou empate simples.
               </p>
             </div>
 
             <div className="p-4 bg-muted/20 border border-border-custom/40 rounded-xl space-y-2">
               <div className="flex items-center gap-2 text-accent-custom font-extrabold text-xs uppercase tracking-wider">
                 <Coins size={16} />
-                Divisão de Prêmios (80%)
+                Prêmios e Comissões
               </div>
               <p className="text-[11px] text-secondary leading-relaxed font-semibold">
-                Do total arrecadado com as taxas de inscrição pagas pelos participantes, 80% é integralmente destinado à premiação dos ganhadores. Os 20% restantes cobrem as taxas de operação e administrativas.
+                Se o criador participar, a divisão é 80% prêmio e 20% plataforma. Se não participar, o criador recebe 10% de comissão, 10% vai para a plataforma e 80% vai para o prêmio dos participantes.
               </p>
             </div>
 
@@ -210,7 +238,7 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
                 Ganhador do Bolão
               </div>
               <p className="text-[11px] text-secondary leading-relaxed font-semibold">
-                O prêmio acumulado de 80% é dividido em partes iguais entre todos os participantes da sala que terminarem empatados na primeira posição do ranking ao final do bolão, desde que tenham acumulado pontos (&gt; 0).
+                O prêmio acumulado de 80% é dividido igualmente entre todos os participantes da sala que terminarem empatados na primeira posição do ranking ao final do bolão, desde que tenham acumulado pontos (&gt; 0).
               </p>
             </div>
 
@@ -220,7 +248,17 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
                 Acúmulo para o Criador
               </div>
               <p className="text-[11px] text-secondary leading-relaxed font-semibold">
-                Se nenhum participante da sala conseguir acertar qualquer placar exato ao final do bolão, não haverá vencedores e a premiação total acumulada (80%) será automaticamente revertida para o saldo do criador/dono da sala.
+                Se nenhum participante da sala conseguir somar qualquer ponto ao final do bolão, não haverá vencedores e o prêmio de 80% será revertido automaticamente ao saldo do criador da sala, e 20% para a plataforma.
+              </p>
+            </div>
+
+            <div className="p-4 bg-muted/20 border border-border-custom/40 rounded-xl space-y-2 col-span-1 md:col-span-2">
+              <div className="flex items-center gap-2 text-accent-custom font-extrabold text-xs uppercase tracking-wider">
+                <Clock size={16} />
+                Sincronização & Crédito de Prêmios
+              </div>
+              <p className="text-[11px] text-secondary leading-relaxed font-semibold">
+                Os resultados dos jogos no aplicativo são atualizados diariamente às <strong>7h da manhã</strong>. A premiação correspondente será creditada na carteira dos vencedores no <strong>dia seguinte</strong> ao encerramento oficial de todas as partidas da sala.
               </p>
             </div>
           </div>
@@ -276,6 +314,33 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
               />
             </div>
 
+            {/* Participar do Bolão? */}
+            <div className="space-y-3 p-4 bg-muted/20 border border-border-custom/50 rounded-xl">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1 pr-4">
+                  <label className="text-xs font-extrabold text-primary uppercase tracking-wider block">
+                    Participar como Jogador?
+                  </label>
+                  <span className="text-[10px] text-secondary font-medium leading-relaxed block">
+                    Se ativado, você jogará dando palpites e deverá pagar a taxa de R$ {getFinalFeeValue().toFixed(2)}. Se desativado, você será apenas o administrador da sala e receberá 10% de comissão por participante ativo.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreatorParticipates(!creatorParticipates)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    creatorParticipates ? 'bg-accent-custom' : 'bg-muted'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
+                      creatorParticipates ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* Valor de Aposta (Pix) */}
             <div className="space-y-3">
               <label className="text-xs font-extrabold text-primary uppercase tracking-wider block">
@@ -307,7 +372,7 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
               {/* Detalhes de Valores */}
               {entryFeeMode === 'predefined' && (
                 <div className="flex gap-2.5 flex-wrap pt-1">
-                  {[5, 10, 20, 50].map((fee) => (
+                  {[10, 20, 50, 100].map((fee) => (
                     <button
                       key={fee}
                       type="button"
@@ -476,6 +541,136 @@ export default function CreateRoomClient({ matches, isFinancialRegistered }: Cre
           router.refresh();
         }}
       />
+
+      {/* Modal de Confirmação de Criação de Sala */}
+      {createdRoomInfo && (
+        <div 
+          onClick={() => setCreatedRoomInfo(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-card border border-border-custom rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden transition-all duration-300"
+          >
+            {/* Botão Fechar (X) */}
+            <button
+              type="button"
+              onClick={() => setCreatedRoomInfo(null)}
+              className="absolute top-4 right-4 text-secondary hover:text-primary transition-colors cursor-pointer z-10"
+              aria-label="Fechar"
+            >
+              <X size={20} weight="bold" />
+            </button>
+
+            {/* Background premium light glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-56 h-56 bg-accent-custom/5 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="flex flex-col items-center text-center space-y-6 animate-scaleUp">
+              {/* Success Animated Badge */}
+              <div className="w-20 h-20 bg-green-500/10 text-green-500 border-2 border-green-500/30 rounded-full flex items-center justify-center text-4xl shadow-lg shadow-green-500/10 animate-bounce">
+                <CheckCircle size={44} weight="fill" />
+              </div>
+
+              {/* Title & Description */}
+              <div className="space-y-2 select-none">
+                <h3 className="text-xl font-black text-primary uppercase tracking-wider">
+                  Bolão Criado com Sucesso!
+                </h3>
+                <p className="text-xs text-secondary font-semibold max-w-[320px] mx-auto leading-relaxed">
+                  A sala <strong className="text-primary font-bold">{createdRoomInfo.name}</strong> está pronta. Convide seus amigos para palpitar e disputar a premiação!
+                </p>
+              </div>
+
+              {/* Share link input/box */}
+              <div className="w-full space-y-2.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-secondary text-left block">
+                  Link de Convite
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.protocol}//${window.location.host}/salas/join/${createdRoomInfo.id}`}
+                    className="flex-grow h-11 px-3 bg-base border border-border-custom text-secondary text-xs font-semibold rounded-xl focus:outline-none select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const link = `${window.location.protocol}//${window.location.host}/salas/join/${createdRoomInfo.id}`;
+                      const success = await copyTextToClipboard(link);
+                      if (success) {
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }
+                    }}
+                    className="h-11 px-4 bg-muted hover:bg-muted/80 text-primary border border-border-custom font-black text-xs uppercase tracking-wider rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  >
+                    {copiedLink ? <Check size={16} className="text-green-500" /> : <Clipboard size={16} />}
+                    {copiedLink ? 'Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Actions Grid */}
+              <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+                {/* Share WhatsApp */}
+                <a
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                    `Participe do meu bolão da Copa do Mundo na sala "${createdRoomInfo.name}"! Dê seus palpites e dispute a premiação. Entre pelo link: ${window.location.protocol}//${window.location.host}/salas/join/${createdRoomInfo.id}`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-12 bg-[#25D366] hover:bg-[#20ba5a] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow shadow-[#25D366]/20"
+                >
+                  <WhatsappLogo size={20} weight="fill" />
+                  Enviar no WhatsApp
+                </a>
+
+                {/* Native Share / General Share */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const link = `${window.location.protocol}//${window.location.host}/salas/join/${createdRoomInfo.id}`;
+                    if (navigator.share) {
+                      try {
+                        await navigator.share({
+                          title: `Bolão - ${createdRoomInfo.name}`,
+                          text: `Participe do meu bolão da Copa na sala "${createdRoomInfo.name}"!`,
+                          url: link,
+                        });
+                      } catch (e) {}
+                    } else {
+                      const success = await copyTextToClipboard(link);
+                      if (success) {
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }
+                    }
+                  }}
+                  className="h-12 bg-accent-custom hover:bg-accent-hover text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow shadow-accent-custom/25"
+                >
+                  <ShareNetwork size={20} />
+                  Compartilhar
+                </button>
+              </div>
+
+              {/* Bottom direct redirect */}
+              <div className="w-full pt-2 border-t border-border-custom/40">
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.push(`/?tab=salas&roomId=${createdRoomInfo.id}`);
+                    router.refresh();
+                  }}
+                  className="w-full h-11 bg-card hover:bg-muted/40 text-primary border border-border-custom font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                >
+                  Entrar no Bolão / Ver Rankings
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

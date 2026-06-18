@@ -5,7 +5,7 @@ import { getRanking } from '@/app/actions';
 import FlagTeam from '@/components/ui/FlagTeam';
 import PointsBadge from '@/components/ui/PointsBadge';
 import { Match, Prediction } from '@/types';
-import { Calendar, Hourglass, CheckCircle, Flame } from '@phosphor-icons/react/dist/ssr';
+import { Calendar, Hourglass, CheckCircle, Flame, Trophy, Coins, SoccerBall } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { formatMatchDateTime } from '@/lib/date';
 import EditNicknameForm from '@/components/ui/EditNicknameForm';
@@ -156,12 +156,14 @@ export default async function PerfilPage() {
               <div className="flex items-center gap-2 flex-wrap pt-1">
                 {userRankPosition > 0 && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20 text-xs font-black uppercase tracking-wider rounded-xl select-none">
-                    🏆 {userRankPosition}º Lugar
+                    <Trophy size={14} weight="fill" className="text-amber-500 shrink-0" />
+                    <span>{userRankPosition}º Lugar</span>
                   </span>
                 )}
                 {currentStreak >= 2 && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-orange-500/10 text-orange-500 border border-orange-500/20 text-xs font-black uppercase tracking-wider rounded-xl select-none">
-                    🔥 {currentStreak} em sequência
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/10 text-orange-500 border border-orange-500/20 text-xs font-black uppercase tracking-wider rounded-xl select-none">
+                    <Flame size={14} weight="fill" className="text-orange-500 shrink-0" />
+                    <span>{currentStreak} em sequência</span>
                   </span>
                 )}
                 <ShareButton
@@ -220,8 +222,9 @@ export default async function PerfilPage() {
 
       {/* Seção Financeira */}
       <div className="mb-10">
-        <h2 className="text-base font-extrabold text-primary mb-5 flex items-center gap-2 uppercase tracking-wider pb-2 border-b border-border-custom">
-          💰 Carteira e Saques
+        <h2 className="text-base font-extrabold text-primary mb-5 flex items-center gap-2 uppercase tracking-wider pb-2 border-b border-b-border-custom">
+          <Coins size={18} weight="bold" className="text-accent-custom" />
+          Carteira e Saques
         </h2>
         <FinancialProfileClient
           initialBalance={Number(profile?.balance || 0)}
@@ -241,7 +244,7 @@ export default async function PerfilPage() {
         /* Empty State Customizado */
         <div className="text-center py-12 px-6 bg-card border border-border-custom rounded-2xl max-w-md mx-auto shadow-lg space-y-4 animate-fadeIn">
           <div className="w-16 h-16 bg-accent-custom/10 text-accent-custom border border-accent-custom/20 rounded-full flex items-center justify-center text-2xl mx-auto">
-            ⚽
+            <SoccerBall size={32} weight="fill" className="text-accent-custom" />
           </div>
           <h3 className="text-lg font-extrabold text-primary uppercase tracking-wider">
             Você ainda não fez nenhum palpite.
