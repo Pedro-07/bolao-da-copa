@@ -1,11 +1,11 @@
 import React from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { getRanking } from '@/app/actions';
+import { getUserRooms, getRoomRanking } from '@/app/actions';
 import FlagTeam from '@/components/ui/FlagTeam';
 import PointsBadge from '@/components/ui/PointsBadge';
 import { Match, Prediction } from '@/types';
-import { Calendar, Hourglass, CheckCircle, Flame, Trophy, Coins, SoccerBall } from '@phosphor-icons/react/dist/ssr';
+import { Calendar, Hourglass, CheckCircle, Flame, Trophy, Coins, SoccerBall, UsersThree } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { formatMatchDateTime } from '@/lib/date';
 import EditNicknameForm from '@/components/ui/EditNicknameForm';
@@ -31,9 +31,33 @@ export default async function PerfilPage() {
     .eq('id', user.id)
     .single();
 
-  // 3. Buscar ranking para calcular a posição do usuário
-  const ranking = await getRanking();
-  const userRankPosition = ranking.findIndex((r) => r.user_id === user.id) + 1;
+  // 3. Buscar salas do usuário e calcular ranking em cada sala
+  const roomsResult = await getUserRooms();
+  const userRooms = (roomsResult.success && roomsResult.rooms) ? roomsResult.rooms : [];
+
+  // Calcular posição do usuário em cada sala
+  const roomRankings: { roomName: string; position: number; totalPoints: number }[] = [];
+  for (const room of userRooms) {
+    const rankResult = await getRoomRanking(room.id);
+    if (rankResult.success && rankResult.ranking) {
+      const pos = rankResult.ranking.findIndex((r: any) => r.user_id === user.id) + 1;
+      const entry = rankResult.ranking.find((r: any) => r.user_id === user.id);
+      if (pos > 0) {
+        roomRankings.push({ roomName: room.name, position: pos, totalPoints: entry?.total_points ?? 0 });
+      }
+    }
+  }
+
+  // Buscar match_ids das salas do usuário para filtrar estatísticas
+  let roomMatchIds: string[] = [];
+  if (userRooms.length > 0) {
+    const roomIds = userRooms.map((r: any) => r.id);
+    const { data: rmData } = await supabase
+      .from('room_matches')
+      .select('match_id')
+      .in('room_id', roomIds);
+    roomMatchIds = Array.from(new Set((rmData || []).map((rm: any) => rm.match_id)));
+  }
 
   // 4. Buscar palpites do usuário junto com os dados dos jogos
   const { data: predictionsData } = await supabase
@@ -60,7 +84,11 @@ export default async function PerfilPage() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
-  const predictionsList: any[] = predictionsData || [];
+  // Filtrar palpites apenas para jogos que pertencem às salas do usuário
+  const allPredictions: any[] = predictionsData || [];
+  const predictionsList = roomMatchIds.length > 0
+    ? allPredictions.filter((p: any) => roomMatchIds.includes(p.match?.id))
+    : allPredictions;
 
   // Calcular estatísticas locais
   const totalPoints = predictionsList.reduce((acc, curr) => acc + (curr.points || 0), 0);
@@ -89,8 +117,9 @@ export default async function PerfilPage() {
     else break;
   }
 
-  const rankingEntry = ranking.find((r) => r.user_id === user.id);
-  const aproveitamento = rankingEntry?.aproveitamento ?? 0;
+  const aproveitamento = totalPredictions > 0
+    ? Math.round((exactHits / totalPredictions) * 100)
+    : 0;
 
   // Dividir em palpites futuros (Aguardando) e passados (Finalizados/Pontuados)
   const awaitingResults = predictionsList.filter(
@@ -154,12 +183,12 @@ export default async function PerfilPage() {
               )}
               <EditNicknameForm currentName={profile?.name || user.email?.split('@')[0] || ''} />
               <div className="flex items-center gap-2 flex-wrap pt-1">
-                {userRankPosition > 0 && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20 text-xs font-black uppercase tracking-wider rounded-xl select-none">
+                {roomRankings.length > 0 && roomRankings.map((rr, idx) => (
+                  <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20 text-xs font-black uppercase tracking-wider rounded-xl select-none" title={rr.roomName}>
                     <Trophy size={14} weight="fill" className="text-amber-500 shrink-0" />
-                    <span>{userRankPosition}º Lugar</span>
+                    <span>{rr.position}º em {rr.roomName.length > 15 ? rr.roomName.slice(0, 15) + '…' : rr.roomName}</span>
                   </span>
-                )}
+                ))}
                 {currentStreak >= 2 && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/10 text-orange-500 border border-orange-500/20 text-xs font-black uppercase tracking-wider rounded-xl select-none">
                     <Flame size={14} weight="fill" className="text-orange-500 shrink-0" />
@@ -167,7 +196,7 @@ export default async function PerfilPage() {
                   </span>
                 )}
                 <ShareButton
-                position={userRankPosition || 99}
+                position={roomRankings.length > 0 ? roomRankings[0].position : 99}
                 totalPoints={totalPoints}
                 acertos={totalAcertos}
                 aproveitamento={aproveitamento}
