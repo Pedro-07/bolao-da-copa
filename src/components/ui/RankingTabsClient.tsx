@@ -32,6 +32,7 @@ interface RankingTabsClientProps {
   totalMatches: number;
   initialRooms: Room[];
   isFinancialRegistered: boolean;
+  isSandbox?: boolean;
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -66,6 +67,7 @@ export default function RankingTabsClient({
   totalMatches,
   initialRooms,
   isFinancialRegistered,
+  isSandbox = false,
 }: RankingTabsClientProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'salas' | 'regulamento'>('salas');
@@ -862,24 +864,24 @@ export default function RankingTabsClient({
                     </div>
                   )}
 
-                  {!isSimulatingPayment && (
-                    <div className="space-y-2 border-t border-border-custom/45 pt-3.5">
-                      <div className="flex items-center gap-1.5 text-amber-500 text-[9px] font-black uppercase tracking-wider">
-                        <Warning size={12} />
-                        Ambiente de Teste (Sandbox)
-                      </div>
-                      <p className="text-[10px] text-secondary leading-relaxed font-medium">
-                        Como estamos no ambiente de homologação do Asaas, este QR Code é fictício e <strong>não funcionará em aplicativos de bancos reais</strong>. 
-                        Clique no botão abaixo para simular o pagamento e confirmar instantaneamente!
-                      </p>
-                      <button
-                        onClick={handleManualConfirm}
-                        className="w-full h-9 flex items-center justify-center bg-muted hover:bg-muted/80 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-border-custom/60 transition-colors cursor-pointer"
-                      >
-                        Simular Confirmação Instantânea
-                      </button>
-                    </div>
-                  )}
+                   {!isSimulatingPayment && isSandbox && (
+                     <div className="space-y-2 border-t border-border-custom/45 pt-3.5">
+                       <div className="flex items-center gap-1.5 text-amber-500 text-[9px] font-black uppercase tracking-wider">
+                         <Warning size={12} />
+                         Ambiente de Teste (Sandbox)
+                       </div>
+                       <p className="text-[10px] text-secondary leading-relaxed font-medium">
+                         Como estamos no ambiente de homologação do Asaas, este QR Code é fictício e <strong>não funcionará em aplicativos de bancos reais</strong>. 
+                         Clique no botão abaixo para simular o pagamento e confirmar instantaneamente!
+                       </p>
+                       <button
+                         onClick={handleManualConfirm}
+                         className="w-full h-9 flex items-center justify-center bg-muted hover:bg-muted/80 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-border-custom/60 transition-colors cursor-pointer"
+                       >
+                         Simular Confirmação Instantânea
+                       </button>
+                     </div>
+                   )}
 
                   <button
                     onClick={() => setShowPixModal(false)}

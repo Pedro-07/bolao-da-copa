@@ -30,6 +30,19 @@ async function ensureUserProfile(user: any) {
   }
 }
 
+async function checkIsAdmin(userId: string, supabase: any): Promise<boolean> {
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', userId)
+      .single();
+    return !!profile?.is_admin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Salva ou edita o palpite de um usuário para uma determinada partida.
  * Restrição comportamental: O palpite só pode ser criado/editado se match_time > now()
@@ -123,9 +136,9 @@ export async function saveMatchResult(
       return { success: false, error: 'Usuário não autenticado.' };
     }
 
-    // 2. Verificar se o e-mail corresponde ao administrador
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    // 2. Verificar se o usuário é administrador
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado. Apenas o administrador pode salvar resultados.' };
     }
 
@@ -210,9 +223,9 @@ export async function createMatch(data: {
       return { success: false, error: 'Usuário não autenticado.' };
     }
 
-    // 2. Verificar se o e-mail corresponde ao administrador
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    // 2. Verificar se o usuário é administrador
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado. Apenas o administrador pode cadastrar partidas.' };
     }
 
@@ -250,9 +263,9 @@ export async function shiftAllMatchTimes() {
       return { success: false, error: 'Usuário não autenticado.' };
     }
 
-    // 2. Verificar se o e-mail corresponde ao administrador
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    // 2. Verificar se o usuário é administrador
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado. Apenas o administrador pode ajustar horários.' };
     }
 
@@ -408,8 +421,8 @@ export async function deleteUser(userId: string) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.' };
 
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado.' };
     }
 
@@ -774,6 +787,11 @@ export async function confirmRoomPayment(roomId: string) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.' };
 
+    const asaasUrl = process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3';
+    if (!asaasUrl.includes('sandbox')) {
+      return { success: false, error: 'A confirmação manual só é permitida em ambiente de testes (Sandbox).' };
+    }
+
     const { error: updateError } = await supabase
       .from('room_participants')
       .update({ payment_status: 'paid' })
@@ -979,6 +997,13 @@ export async function generatePixCharge(roomId: string) {
     };
 
     if (!customerId) {
+      if (!profile?.cpf_cnpj) {
+        return {
+          success: false,
+          error: 'Você precisa cadastrar seu CPF/CNPJ no perfil financeiro antes de realizar o pagamento.'
+        };
+      }
+
       // Asaas requires name to contain only letters and spaces, and cpfCnpj is a mandatory field
       const inputName = profile?.full_name || profile?.name || user.email?.split('@')[0] || 'Participante';
       const sanitizedName = inputName
@@ -992,7 +1017,7 @@ export async function generatePixCharge(roomId: string) {
         headers,
         body: JSON.stringify({
           name: sanitizedName,
-          cpfCnpj: profile?.cpf_cnpj || generateRandomCpf(),
+          cpfCnpj: profile.cpf_cnpj,
           email: user.email || undefined,
           phone: profile?.phone || undefined,
         }),
@@ -1175,8 +1200,8 @@ export async function approveWithdrawal(withdrawalId: string) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.' };
 
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado.' };
     }
 
@@ -1216,8 +1241,8 @@ export async function rejectWithdrawal(withdrawalId: string) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.' };
 
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado.' };
     }
 
@@ -1286,8 +1311,8 @@ export async function finalizeRoom(roomId: string) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.' };
 
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado.' };
     }
 
@@ -1498,8 +1523,8 @@ export async function getAllWithdrawalsAdmin() {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.', data: [] };
 
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado.', data: [] };
     }
 
@@ -1535,8 +1560,8 @@ export async function getAllRoomsAdmin() {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return { success: false, error: 'Não autenticado.', data: [] };
 
-    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
+    const isAdmin = await checkIsAdmin(user.id, supabase);
+    if (!isAdmin) {
       return { success: false, error: 'Acesso negado.', data: [] };
     }
 
@@ -1769,8 +1794,8 @@ export async function fetchAndUpdateMatchResults(bypassCronSecret?: string) {
         return { success: false, error: 'Usuário não autenticado.' };
       }
 
-      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-      if (!adminEmail || user.email !== adminEmail) {
+      const isAdmin = await checkIsAdmin(user.id, supabase);
+      if (!isAdmin) {
         return { success: false, error: 'Acesso negado. Apenas o administrador pode atualizar resultados.' };
       }
     }

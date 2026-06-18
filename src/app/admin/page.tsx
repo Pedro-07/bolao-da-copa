@@ -12,8 +12,13 @@ export default async function AdminPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-  if (!adminEmail || user.email !== adminEmail) redirect('/');
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || !profile.is_admin) redirect('/');
 
   const [matchesResult, profilesResult, predictionsResult, withdrawalsRes, roomsRes] = await Promise.all([
     supabase.from('matches').select('*').order('match_time', { ascending: true }),

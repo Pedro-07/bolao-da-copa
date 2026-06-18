@@ -22,16 +22,14 @@ export default function Navbar() {
       setUser(user);
       
       if (user) {
-        const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-        setIsAdmin(user.email === adminEmail);
-
         const { data: profile } = await supabase
           .from('profiles')
-          .select('name')
+          .select('name, is_admin')
           .eq('id', user.id)
           .single();
         
         setProfile(profile);
+        setIsAdmin(!!profile?.is_admin);
       } else {
         setProfile(null);
         setIsAdmin(false);
@@ -43,15 +41,14 @@ export default function Navbar() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUser(session.user);
-        const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-        setIsAdmin(session.user.email === adminEmail);
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('name')
+          .select('name, is_admin')
           .eq('id', session.user.id)
           .single();
         setProfile(profile);
+        setIsAdmin(!!profile?.is_admin);
       } else {
         setUser(null);
         setProfile(null);

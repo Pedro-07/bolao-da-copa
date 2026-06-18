@@ -10,7 +10,7 @@ const outfit = Outfit({
   variable: '--font-outfit',
 });
 
-const siteUrl = 'https://bolao-copa-do-mundo-tau.vercel.app';
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://bolao-da-copa-2026-peach.vercel.app';
 
 export const metadata: Metadata = {
   title: 'Bolão Copa do Mundo 2026',

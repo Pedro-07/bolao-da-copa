@@ -273,13 +273,20 @@ export default async function HomePage() {
 
         {/* Tabela de Classificação Completa (1 coluna) */}
         <div id="ranking" className="lg:col-span-1 lg:sticky lg:top-24">
-          <RankingTabsClient
-            globalRanking={ranking}
-            currentUserId={user?.id}
-            totalMatches={matches.length}
-            initialRooms={userRooms}
-            isFinancialRegistered={isFinancialRegistered}
-          />
+          {(() => {
+            const asaasUrl = process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3';
+            const isSandbox = asaasUrl.includes('sandbox');
+            return (
+              <RankingTabsClient
+                globalRanking={ranking}
+                currentUserId={user?.id}
+                totalMatches={matches.length}
+                initialRooms={userRooms}
+                isFinancialRegistered={isFinancialRegistered}
+                isSandbox={isSandbox}
+              />
+            );
+          })()}
         </div>
       </div>
     </div>
