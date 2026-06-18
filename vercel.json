@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/cron/update-matches",
-      "schedule": "0 1,7,19,22 * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }
