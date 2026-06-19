@@ -1,36 +1,36 @@
 'use client';
-
-import React, { useEffect, useState } from 'react';
+ 
+import React, { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { House, Calendar, Trophy, User, List } from '@phosphor-icons/react';
 import { createClient } from '@/lib/supabase/client';
-
-export default function BottomNav() {
+ 
+function BottomNavContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const supabase = createClient();
-
+ 
   useEffect(() => {
     async function checkAuth() {
       const { data: { user } } = await supabase.auth.getUser();
       setIsAuthenticated(!!user);
     }
     checkAuth();
-
+ 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setIsAuthenticated(!!session?.user);
     });
-
+ 
     return () => {
       subscription.unsubscribe();
     };
   }, [supabase]);
-
+ 
   // Se não autenticado, não exibe a BottomNav (ou exibe apenas o link de Home/Login, mas ocultar é mais limpo)
   if (!isAuthenticated) return null;
-
+ 
   const tabs = [
     { name: 'Início', href: '/', icon: House },
     { name: 'Palpitar', href: '/palpites', icon: Calendar },
@@ -38,7 +38,7 @@ export default function BottomNav() {
     { name: 'Todos', href: '/todos', icon: List },
     { name: 'Perfil', href: '/perfil', icon: User },
   ];
-
+ 
   return (
     <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 backdrop-blur-md border-t border-border-custom text-primary transition-all duration-300 pb-safe">
       <div className="flex justify-around items-center h-16 px-2">
@@ -55,7 +55,7 @@ export default function BottomNav() {
           } else {
             isActive = pathname === tab.href;
           }
-
+ 
           return (
             <Link
               key={tab.href}
@@ -73,5 +73,13 @@ export default function BottomNav() {
         })}
       </div>
     </div>
+  );
+}
+ 
+export default function BottomNav() {
+  return (
+    <Suspense fallback={null}>
+      <BottomNavContent />
+    </Suspense>
   );
 }
