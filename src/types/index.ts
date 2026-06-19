@@ -15,6 +15,7 @@ export interface Match {
   away_score: number | null;
   stage: string;
   group_name: string | null;
+  api_fixture_id?: number | null;
   created_at: string;
 }
 

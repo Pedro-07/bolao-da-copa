@@ -3,9 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(req: NextRequest) {
   try {
-    // Validate Webhook Access Token
     const token = req.headers.get('asaas-access-token');
-    if (process.env.ASAAS_WEBHOOK_TOKEN && token !== process.env.ASAAS_WEBHOOK_TOKEN) {
+    if (!process.env.ASAAS_WEBHOOK_TOKEN || token !== process.env.ASAAS_WEBHOOK_TOKEN) {
       return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
     }
 

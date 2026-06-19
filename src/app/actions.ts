@@ -579,6 +579,25 @@ export async function joinRoom(roomId: string) {
 
     if (roomError || !room) return { success: false, error: 'Sala não encontrada.' };
 
+    // Validar se alguma partida vinculada à sala já começou (previne fraudes e inscrições tardias)
+    const { data: roomMatchesData } = await admin
+      .from('room_matches')
+      .select('match_id')
+      .eq('room_id', roomId);
+    
+    const matchIds = (roomMatchesData || []).map((rm) => rm.match_id);
+    if (matchIds.length > 0) {
+      const { data: startedMatches } = await admin
+        .from('matches')
+        .select('id')
+        .in('id', matchIds)
+        .lt('match_time', new Date().toISOString());
+
+      if (startedMatches && startedMatches.length > 0) {
+        return { success: false, error: 'Não é possível entrar nesta sala pois um ou mais jogos já começaram.' };
+      }
+    }
+
     // Use admin client for room_participants operations — RLS blocks non-members
     // from SELECT/INSERT on room_participants, which prevents joining.
     const { data: existingMember } = await admin
@@ -634,7 +653,7 @@ export async function getUserRooms() {
           created_by,
           creator_participates,
           finalized,
-          profiles (
+          profiles:created_by (
             name
           )
         )
@@ -646,7 +665,7 @@ export async function getUserRooms() {
     // 2. Obter todas as salas criadas pelo usuário (para garantir que apareçam mesmo se ele não participar)
     const { data: createdRoomsData, error: createdError } = await supabase
       .from('rooms')
-      .select('id, name, entry_fee, created_by, creator_participates, finalized, profiles(name)')
+      .select('id, name, entry_fee, created_by, creator_participates, finalized, profiles:created_by(name)')
       .eq('created_by', user.id);
 
     if (createdError) return { success: false, error: createdError.message, rooms: [] };
@@ -949,6 +968,25 @@ export async function generatePixCharge(roomId: string) {
     if (roomError || !room) return { success: false, error: 'Sala não encontrada.' };
     if (Number(room.entry_fee) <= 0) return { success: false, error: 'Esta sala não possui taxa de inscrição.' };
 
+    // Validar se alguma partida vinculada à sala já começou (previne fraudes e pagamentos tardios)
+    const { data: roomMatchesData } = await supabase
+      .from('room_matches')
+      .select('match_id')
+      .eq('room_id', roomId);
+    
+    const matchIds = (roomMatchesData || []).map((rm) => rm.match_id);
+    if (matchIds.length > 0) {
+      const { data: startedMatches } = await supabase
+        .from('matches')
+        .select('id')
+        .in('id', matchIds)
+        .lt('match_time', new Date().toISOString());
+
+      if (startedMatches && startedMatches.length > 0) {
+        return { success: false, error: 'Não é possível gerar Pix para esta sala pois um ou mais jogos já começaram.' };
+      }
+    }
+
     const { data: participant, error: partError } = await supabase
       .from('room_participants')
       .select('payment_status, asaas_payment_id, pix_qr_code, pix_copia_e_cola')
@@ -1127,32 +1165,15 @@ export async function requestWithdrawal(amount: number, pixKeyType: 'CPF' | 'CNP
 
     const admin = createAdminClient();
 
-    // Buscar perfil para verificar saldo
-    const { data: profile, error: profileError } = await admin
-      .from('profiles')
-      .select('balance')
-      .eq('id', user.id)
-      .single();
+    // 1. Debitar do saldo do usuário de forma atômica (previne condições de corrida)
+    const { data: hasDebited, error: rpcError } = await admin
+      .rpc('decrement_balance', {
+        p_user_id: user.id,
+        p_amount: amount
+      });
 
-    if (profileError || !profile) {
-      return { success: false, error: 'Perfil não encontrado.' };
-    }
-
-    const currentBalance = Number(profile.balance || 0);
-    if (currentBalance < amount) {
-      return { success: false, error: 'Saldo insuficiente para realizar o saque.' };
-    }
-
-    // Executar transações do saque
-    // 1. Debitar do saldo do usuário
-    const newBalance = currentBalance - amount;
-    const { error: balanceError } = await admin
-      .from('profiles')
-      .update({ balance: newBalance })
-      .eq('id', user.id);
-
-    if (balanceError) {
-      return { success: false, error: 'Erro ao debitar saldo: ' + balanceError.message };
+    if (rpcError || !hasDebited) {
+      return { success: false, error: rpcError?.message || 'Saldo insuficiente ou falha ao debitar saldo.' };
     }
 
     // 2. Criar solicitação em public.withdrawals
@@ -1170,7 +1191,10 @@ export async function requestWithdrawal(amount: number, pixKeyType: 'CPF' | 'CNP
 
     if (withdrawalError || !withdrawal) {
       // Reverter saldo caso dê erro
-      await admin.from('profiles').update({ balance: currentBalance }).eq('id', user.id);
+      await admin.rpc('increment_balance', {
+        p_user_id: user.id,
+        p_amount: amount
+      });
       return { success: false, error: 'Erro ao criar solicitação de saque: ' + withdrawalError?.message };
     }
 
@@ -1420,8 +1444,8 @@ export async function finalizeRoom(roomId: string) {
           reference_id: roomId
         });
     } else {
-      // Se houver vencedores, divide a premiação entre eles
-      const prizeShare = netPrizePool / winners.length;
+      // Se houver vencedores, divide a premiação entre eles (truncando em duas casas decimais)
+      const prizeShare = Math.floor((netPrizePool / winners.length) * 100) / 100;
 
       // Creditar prêmio a cada vencedor
       for (const winner of winners) {
@@ -1572,7 +1596,7 @@ export async function getAllRoomsAdmin() {
       .from('rooms')
       .select(`
         *,
-        creator:profiles(name)
+        creator:created_by(name)
       `)
       .order('created_at', { ascending: false });
 
@@ -1831,26 +1855,34 @@ export async function fetchAndUpdateMatchResults(bypassCronSecret?: string) {
       const translatedHome = TEAM_TRANSLATIONS[dbMatch.home_team] || dbMatch.home_team;
       const translatedAway = TEAM_TRANSLATIONS[dbMatch.away_team] || dbMatch.away_team;
 
-      const dbMatchDate = new Date(dbMatch.match_time);
-      
-      const matchFixture = apiFixtures.find((apiMatch) => {
-        const homeNameApi = apiMatch.teams.home.name.toLowerCase();
-        const awayNameApi = apiMatch.teams.away.name.toLowerCase();
-        const homeNameTranslated = translatedHome.toLowerCase();
-        const awayNameTranslated = translatedAway.toLowerCase();
+      let matchFixture = null;
 
-        const sameTeams = (homeNameApi === homeNameTranslated && awayNameApi === awayNameTranslated) ||
-                          (homeNameApi === awayNameTranslated && awayNameApi === homeNameTranslated);
+      if (dbMatch.api_fixture_id) {
+        matchFixture = apiFixtures.find((apiMatch) => apiMatch.id === dbMatch.api_fixture_id);
+      }
 
-        if (!sameTeams) return false;
+      if (!matchFixture) {
+        const dbMatchDate = new Date(dbMatch.match_time);
+        
+        matchFixture = apiFixtures.find((apiMatch) => {
+          const homeNameApi = apiMatch.teams.home.name.toLowerCase();
+          const awayNameApi = apiMatch.teams.away.name.toLowerCase();
+          const homeNameTranslated = translatedHome.toLowerCase();
+          const awayNameTranslated = translatedAway.toLowerCase();
 
-        const apiMatchDate = new Date(apiMatch.date);
-        if (apiMatchDate.getFullYear() !== dbMatchDate.getFullYear()) {
-          return true; // Ignora o horário se estiver testando com temporadas históricas (ex: 2022)
-        }
-        const diffHours = Math.abs(apiMatchDate.getTime() - dbMatchDate.getTime()) / (1000 * 60 * 60);
-        return diffHours <= 4;
-      });
+          const sameTeams = (homeNameApi === homeNameTranslated && awayNameApi === awayNameTranslated) ||
+                            (homeNameApi === awayNameTranslated && awayNameApi === homeNameTranslated);
+
+          if (!sameTeams) return false;
+
+          const apiMatchDate = new Date(apiMatch.date);
+          if (apiMatchDate.getFullYear() !== dbMatchDate.getFullYear()) {
+            return true; // Ignora o horário se estiver testando com temporadas históricas (ex: 2022)
+          }
+          const diffHours = Math.abs(apiMatchDate.getTime() - dbMatchDate.getTime()) / (1000 * 60 * 60);
+          return diffHours <= 4;
+        });
+      }
 
       if (matchFixture && 
           matchFixture.goals.home !== null && 
@@ -1908,7 +1940,7 @@ export async function getRoomInviteDetails(roomId: string) {
     const admin = createAdminClient();
     const { data: room, error } = await admin
       .from('rooms')
-      .select('id, name, entry_fee, created_by, profiles(name)')
+      .select('id, name, entry_fee, created_by, profiles:created_by(name)')
       .eq('id', roomId)
       .single();
 

@@ -54,17 +54,26 @@ export default async function TodosPalpitesPage() {
 
   const rawPredictions = (predictionsData || []) as unknown as RawPrediction[];
 
-  // 4. Mapear palpites — todos visíveis para todos
+  const now = new Date();
+
+  // 4. Mapear palpites — todos visíveis para todos, porém com higienização de placares para jogos futuros de terceiros
   const predictions = rawPredictions
-    .map((p) => ({
-      id: p.id,
-      match_id: p.match_id,
-      user_id: p.user_id,
-      home_score: p.home_score,
-      away_score: p.away_score,
-      points: p.points,
-      user_name: p.profiles?.name || 'Participante'
-    }));
+    .map((p) => {
+      const match = matches.find((m) => m.id === p.match_id);
+      const isSelf = user?.id === p.user_id;
+      const hasStarted = match ? new Date(match.match_time) <= now : false;
+      const showScore = hasStarted || isSelf;
+
+      return {
+        id: p.id,
+        match_id: p.match_id,
+        user_id: p.user_id,
+        home_score: showScore ? p.home_score : -1,
+        away_score: showScore ? p.away_score : -1,
+        points: p.points,
+        user_name: p.profiles?.name || 'Participante'
+      };
+    });
 
   // 5. Buscar contagem total de palpites por jogo usando a RPC get_predictions_count
   const predictionsCount: Record<string, number> = {};
