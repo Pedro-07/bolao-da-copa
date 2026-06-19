@@ -1950,6 +1950,29 @@ export async function getRoomInviteDetails(roomId: string) {
       ? room.profiles[0]?.name
       : (room.profiles as any)?.name;
 
+    // Buscar relações de jogos na sala
+    const { data: rmData } = await admin
+      .from('room_matches')
+      .select(`
+        matches (
+          id,
+          home_team,
+          away_team,
+          home_flag,
+          away_flag,
+          match_time,
+          stage,
+          group_name,
+          home_score,
+          away_score
+        )
+      `)
+      .eq('room_id', roomId);
+
+    const matches = (rmData || [])
+      .map((rm: any) => rm.matches)
+      .filter((m) => m !== null);
+
     return {
       success: true,
       room: {
@@ -1957,7 +1980,8 @@ export async function getRoomInviteDetails(roomId: string) {
         name: room.name,
         entry_fee: Number(room.entry_fee),
         creator_name: creatorName || 'Participante',
-      }
+      },
+      matches
     };
   } catch (error: any) {
     return { success: false, error: error.message || 'Erro inesperado.' };

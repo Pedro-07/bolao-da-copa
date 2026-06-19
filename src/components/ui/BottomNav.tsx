@@ -2,12 +2,13 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { House, Calendar, Trophy, User } from '@phosphor-icons/react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { House, Calendar, Trophy, User, List } from '@phosphor-icons/react';
 import { createClient } from '@/lib/supabase/client';
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const supabase = createClient();
 
@@ -33,7 +34,8 @@ export default function BottomNav() {
   const tabs = [
     { name: 'Início', href: '/', icon: House },
     { name: 'Palpitar', href: '/palpites', icon: Calendar },
-    { name: 'Todos', href: '/todos', icon: Trophy },
+    { name: 'Ligas', href: '/?tab=salas', icon: Trophy },
+    { name: 'Todos', href: '/todos', icon: List },
     { name: 'Perfil', href: '/perfil', icon: User },
   ];
 
@@ -42,7 +44,18 @@ export default function BottomNav() {
       <div className="flex justify-around items-center h-16 px-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          const isActive = pathname === tab.href;
+          const isLigas = tab.href.startsWith('/?');
+          const isHome = tab.href === '/';
+          
+          let isActive = false;
+          if (isLigas) {
+            isActive = pathname === '/' && (searchParams.get('tab') === 'salas' || !!searchParams.get('roomId'));
+          } else if (isHome) {
+            isActive = pathname === '/' && searchParams.get('tab') !== 'salas' && !searchParams.get('roomId');
+          } else {
+            isActive = pathname === tab.href;
+          }
+
           return (
             <Link
               key={tab.href}
