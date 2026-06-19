@@ -10,7 +10,16 @@ import { SoccerBall, Plus } from '@phosphor-icons/react/dist/ssr';
 
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; roomId?: string }>;
+}) {
+  const params = await searchParams;
+  const tab = params.tab;
+  const roomId = params.roomId;
+  const isRoomActive = !!roomId || tab === 'salas';
+
   const supabase = await createClient();
 
   // 1. Obter usuário logado
@@ -184,144 +193,239 @@ export default async function HomePage() {
       </div>
 
       {/* Grid Principal: Jogos de Hoje e Classificação */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
-        
-        {/* Jogos de Hoje e Regras (2 colunas) */}
-        <div className="lg:col-span-2 space-y-8">
-          
-          {/* Seção Jogos de Hoje */}
-          <div className="space-y-6">
-            <div className="flex items-center justify-between border-b border-border-custom pb-3">
-              <h2 className="text-lg font-black text-primary uppercase tracking-wider select-none flex items-center gap-2">
-                <SoccerBall size={20} weight="fill" className="text-accent-custom" />
-                Jogos de Hoje
-              </h2>
-              <Link
-                href="/palpites"
-                className="text-xs font-bold text-accent-custom hover:text-accent-hover transition-colors"
-              >
-                Todos os jogos &rarr;
-              </Link>
-            </div>
-
-            {todaysMatches.length === 0 ? (
-              <div className="bg-card border border-border-custom rounded-2xl p-10 text-center text-secondary space-y-3 shadow-sm">
-                <p className="font-extrabold text-sm uppercase tracking-wider">
-                  {user ? 'Nenhum jogo dos seus bolões ativo hoje.' : 'Nenhum jogo agendado para hoje.'}
-                </p>
-                <p className="text-xs">
-                  {user 
-                    ? 'Para dar palpites, você precisa estar em um bolão que possua jogos hoje!' 
-                    : 'Crie ou participe de uma sala privada para poder palpitar nos próximos confrontos!'}
-                </p>
-                <div className="pt-2 flex justify-center">
-                  {user ? (
-                    <Link
-                      href="/salas/criar"
-                      className="inline-flex items-center justify-center min-h-[48px] px-5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer"
-                    >
-                      Criar Nova Sala
-                    </Link>
-                  ) : (
-                    <Link
-                      href="/login"
-                      className="inline-flex items-center justify-center min-h-[48px] px-5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer"
-                    >
-                      Fazer Login / Cadastrar
-                    </Link>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {todaysMatches.map((match) => {
-                  const matchIndex = matches.findIndex((m) => m.id === match.id);
-                  const matchNumber = matchIndex !== -1 ? matchIndex + 1 : undefined;
-                  return (
-                    <MatchCard
-                      key={match.id}
-                      match={match}
-                      prediction={predictionsMap.get(match.id)}
-                      isAuthenticated={!!user}
-                      matchNumber={matchNumber}
-                      disablePrediction={!user}
-                    />
-                  );
-                })}
-              </div>
-            )}
+      {isRoomActive ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+          {/* Tabela de Classificação Completa e Detalhes da Sala (Focal point central: 8 colunas) */}
+          <div id="ranking" className="lg:col-span-8">
+            {(() => {
+              const asaasUrl = process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3';
+              const isSandbox = asaasUrl.includes('sandbox');
+              return (
+                <RankingTabsClient
+                  currentUserId={user?.id}
+                  totalMatches={matches.length}
+                  initialRooms={userRooms}
+                  isFinancialRegistered={isFinancialRegistered}
+                  isSandbox={isSandbox}
+                  layout="main"
+                />
+              );
+            })()}
           </div>
 
-          {/* Regras de Pontuação */}
-          <div className="bg-card border border-border-custom rounded-2xl p-6 shadow-xl space-y-4">
-            <h3 className="text-sm font-extrabold text-primary uppercase tracking-wider select-none flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 256 256" fill="currentColor" className="text-accent-custom">
-                <path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V88a8,8,0,0,1,16,0v24h24A8,8,0,0,1,168,128Zm-40,40a12,12,0,1,1,12-12A12,12,0,0,1,128,168Z"></path>
-              </svg>
-              Regras de Pontuação
-            </h3>
+          {/* Sidebar: Jogos de Hoje (Lateral: 4 colunas) */}
+          <div className="lg:col-span-4 space-y-8 lg:sticky lg:top-24">
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
-                <span className="shrink-0 bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider">
-                  3 pts
-                </span>
-                <div className="text-xs space-y-0.5">
-                  <p className="font-extrabold text-primary">Placar Exato</p>
-                  <p className="text-secondary text-[11px] leading-relaxed">Você acertou o placar exato do jogo. Ex: palpite 2x1 e final 2x1.</p>
-                </div>
+            {/* Seção Jogos de Hoje */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border-custom pb-3">
+                <h2 className="text-sm font-black text-primary uppercase tracking-wider select-none flex items-center gap-2">
+                  <SoccerBall size={18} weight="fill" className="text-accent-custom" />
+                  Jogos de Hoje
+                </h2>
+                <Link
+                  href="/palpites"
+                  className="text-[10px] font-black uppercase tracking-wider text-accent-custom hover:text-accent-hover transition-colors"
+                >
+                  Ver Todos &rarr;
+                </Link>
               </div>
 
-              <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
-                <span className="shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider">
-                  2 pts
-                </span>
-                <div className="text-xs space-y-0.5">
-                  <p className="font-extrabold text-primary">Vencedor + Diferença</p>
-                  <p className="text-secondary text-[11px] leading-relaxed">Acertou vencedor e saldo de gols (exceto empate). Ex: palpite 3x1 e final 2x0.</p>
+              {todaysMatches.length === 0 ? (
+                <div className="bg-card border border-border-custom rounded-2xl p-6 text-center text-secondary space-y-2 shadow-sm select-none">
+                  <p className="font-extrabold text-xs uppercase tracking-wider text-primary">
+                    Nenhum jogo hoje
+                  </p>
+                  <p className="text-[10px] leading-relaxed">
+                    Não há partidas agendadas para seus bolões hoje.
+                  </p>
                 </div>
-              </div>
-
-              <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
-                <span className="shrink-0 bg-sky-500/10 text-sky-600 dark:text-sky-450 border border-sky-500/20 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider">
-                  1 pt
-                </span>
-                <div className="text-xs space-y-0.5">
-                  <p className="font-extrabold text-primary">Apenas o Vencedor / Empate</p>
-                  <p className="text-secondary text-[11px] leading-relaxed">Acertou apenas quem ganhou ou que deu empate. Ex: palpite 2x1 e final 1x0.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {todaysMatches.map((match) => {
+                    const matchIndex = matches.findIndex((m) => m.id === match.id);
+                    const matchNumber = matchIndex !== -1 ? matchIndex + 1 : undefined;
+                    return (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        prediction={predictionsMap.get(match.id)}
+                        isAuthenticated={!!user}
+                        matchNumber={matchNumber}
+                        disablePrediction={!user}
+                      />
+                    );
+                  })}
                 </div>
-              </div>
+              )}
+            </div>
 
-              <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
-                <span className="shrink-0 bg-muted border border-border-custom/80 px-2 py-0.5 rounded-full text-[10px] font-black text-secondary tracking-wider">
-                  0 pts
-                </span>
-                <div className="text-xs space-y-0.5">
-                  <p className="font-extrabold text-primary">Errou</p>
-                  <p className="text-secondary text-[11px] leading-relaxed">Errou completamente o resultado da partida.</p>
+            {/* Regras de Pontuação Simplificadas na Lateral */}
+            <div className="bg-card border border-border-custom rounded-2xl p-5 shadow-xl space-y-3.5 select-none">
+              <h3 className="text-xs font-black text-primary uppercase tracking-wider flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" className="text-accent-custom">
+                  <path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V88a8,8,0,0,1,16,0v24h24A8,8,0,0,1,168,128Zm-40,40a12,12,0,1,1,12-12A12,12,0,0,1,128,168Z"></path>
+                </svg>
+                Regras Rápidas
+              </h3>
+              
+              <div className="space-y-2 text-[10px] text-secondary font-bold">
+                <div className="flex justify-between items-center border-b border-border-custom/30 pb-1.5">
+                  <span>Placar Exato</span>
+                  <span className="text-green-500 font-extrabold">3 pts</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-border-custom/30 pb-1.5">
+                  <span>Vencedor + Saldo</span>
+                  <span className="text-amber-500 font-extrabold">2 pts</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Vencedor / Empate</span>
+                  <span className="text-sky-500 font-extrabold">1 pt</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
+          
+          {/* Jogos de Hoje e Regras (2 colunas) */}
+          <div className="lg:col-span-2 space-y-8">
+            
+            {/* Seção Jogos de Hoje */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border-custom pb-3">
+                <h2 className="text-lg font-black text-primary uppercase tracking-wider select-none flex items-center gap-2">
+                  <SoccerBall size={20} weight="fill" className="text-accent-custom" />
+                  Jogos de Hoje
+                </h2>
+                <Link
+                  href="/palpites"
+                  className="text-xs font-bold text-accent-custom hover:text-accent-hover transition-colors"
+                >
+                  Todos os jogos &rarr;
+                </Link>
+              </div>
 
-        {/* Tabela de Classificação Completa (1 coluna) */}
-        <div id="ranking" className="lg:col-span-1 lg:sticky lg:top-24">
-          {(() => {
-            const asaasUrl = process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3';
-            const isSandbox = asaasUrl.includes('sandbox');
-            return (
-              <RankingTabsClient
-                currentUserId={user?.id}
-                totalMatches={matches.length}
-                initialRooms={userRooms}
-                isFinancialRegistered={isFinancialRegistered}
-                isSandbox={isSandbox}
-              />
-            );
-          })()}
+              {todaysMatches.length === 0 ? (
+                <div className="bg-card border border-border-custom rounded-2xl p-10 text-center text-secondary space-y-3 shadow-sm">
+                  <p className="font-extrabold text-sm uppercase tracking-wider">
+                    {user ? 'Nenhum jogo dos seus bolões ativo hoje.' : 'Nenhum jogo agendado para hoje.'}
+                  </p>
+                  <p className="text-xs">
+                    {user 
+                      ? 'Para dar palpites, você precisa estar em um bolão que possua jogos hoje!' 
+                      : 'Crie ou participe de uma sala privada para poder palpitar nos próximos confrontos!'}
+                  </p>
+                  <div className="pt-2 flex justify-center">
+                    {user ? (
+                      <Link
+                        href="/salas/criar"
+                        className="inline-flex items-center justify-center min-h-[48px] px-5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer"
+                      >
+                        Criar Nova Sala
+                      </Link>
+                    ) : (
+                      <Link
+                        href="/login"
+                        className="inline-flex items-center justify-center min-h-[48px] px-5 bg-accent-custom hover:bg-accent-hover text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider shadow cursor-pointer"
+                      >
+                        Fazer Login / Cadastrar
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {todaysMatches.map((match) => {
+                    const matchIndex = matches.findIndex((m) => m.id === match.id);
+                    const matchNumber = matchIndex !== -1 ? matchIndex + 1 : undefined;
+                    return (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        prediction={predictionsMap.get(match.id)}
+                        isAuthenticated={!!user}
+                        matchNumber={matchNumber}
+                        disablePrediction={!user}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Regras de Pontuação */}
+            <div className="bg-card border border-border-custom rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-sm font-extrabold text-primary uppercase tracking-wider select-none flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 256 256" fill="currentColor" className="text-accent-custom">
+                  <path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V88a8,8,0,0,1,16,0v24h24A8,8,0,0,1,168,128Zm-40,40a12,12,0,1,1,12-12A12,12,0,0,1,128,168Z"></path>
+                </svg>
+                Regras de Pontuação
+              </h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
+                  <span className="shrink-0 bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider">
+                    3 pts
+                  </span>
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-extrabold text-primary">Placar Exato</p>
+                    <p className="text-secondary text-[11px] leading-relaxed">Você acertou o placar exato do jogo. Ex: palpite 2x1 e final 2x1.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
+                  <span className="shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider">
+                    2 pts
+                  </span>
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-extrabold text-primary">Vencedor + Diferença</p>
+                    <p className="text-secondary text-[11px] leading-relaxed">Acertou vencedor e saldo de gols (exceto empate). Ex: palpite 3x1 e final 2x0.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
+                  <span className="shrink-0 bg-sky-500/10 text-sky-600 dark:text-sky-450 border border-sky-500/20 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider">
+                    1 pt
+                  </span>
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-extrabold text-primary">Apenas o Vencedor / Empate</p>
+                    <p className="text-secondary text-[11px] leading-relaxed">Acertou apenas quem ganhou ou que deu empate. Ex: palpite 2x1 e final 1x0.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-muted/20 rounded-xl border border-border-custom/40">
+                  <span className="shrink-0 bg-muted border border-border-custom/80 px-2 py-0.5 rounded-full text-[10px] font-black text-secondary tracking-wider">
+                    0 pts
+                  </span>
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-extrabold text-primary">Errou</p>
+                    <p className="text-secondary text-[11px] leading-relaxed">Errou completamente o resultado da partida.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabela de Classificação Completa (1 coluna) */}
+          <div id="ranking" className="lg:col-span-1 lg:sticky lg:top-24">
+            {(() => {
+              const asaasUrl = process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3';
+              const isSandbox = asaasUrl.includes('sandbox');
+              return (
+                <RankingTabsClient
+                  currentUserId={user?.id}
+                  totalMatches={matches.length}
+                  initialRooms={userRooms}
+                  isFinancialRegistered={isFinancialRegistered}
+                  isSandbox={isSandbox}
+                />
+              );
+            })()}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

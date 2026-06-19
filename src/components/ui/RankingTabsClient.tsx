@@ -32,6 +32,7 @@ interface RankingTabsClientProps {
   initialRooms: Room[];
   isFinancialRegistered: boolean;
   isSandbox?: boolean;
+  layout?: 'main' | 'sidebar';
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -66,12 +67,32 @@ export default function RankingTabsClient({
   initialRooms,
   isFinancialRegistered,
   isSandbox = false,
+  layout = 'sidebar',
 }: RankingTabsClientProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'salas' | 'regulamento'>('salas');
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [rooms, setRooms] = useState<Room[]>(initialRooms);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+
+  // Sync initialRooms to state when they change
+  useEffect(() => {
+    setRooms(initialRooms);
+  }, [initialRooms]);
+
+  const selectRoom = (roomId: string | null) => {
+    setSelectedRoomId(roomId);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (roomId) {
+        url.searchParams.set('tab', 'salas');
+        url.searchParams.set('roomId', roomId);
+      } else {
+        url.searchParams.delete('roomId');
+      }
+      router.push(url.pathname + url.search);
+    }
+  };
   const [roomRanking, setRoomRanking] = useState<RankingEntry[]>([]);
   const [isLoadingRanking, setIsLoadingRanking] = useState(false);
   const [showPixModal, setShowPixModal] = useState(false);
@@ -223,9 +244,21 @@ export default function RankingTabsClient({
   // Auto-select first room if none selected
   useEffect(() => {
     if (rooms.length > 0 && !selectedRoomId) {
-      setSelectedRoomId(rooms[0].id);
+      const params = new URLSearchParams(window.location.search);
+      const urlRoomId = params.get('roomId');
+      
+      if (layout === 'main') {
+        const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+        if (urlRoomId) {
+          setSelectedRoomId(urlRoomId);
+        } else if (isDesktop) {
+          setSelectedRoomId(rooms[0].id);
+        }
+      } else {
+        setSelectedRoomId(rooms[0].id);
+      }
     }
-  }, [rooms, selectedRoomId]);
+  }, [rooms, selectedRoomId, layout]);
 
   // Subscribe to real-time payment status changes via Supabase Realtime
   useEffect(() => {
@@ -383,9 +416,9 @@ export default function RankingTabsClient({
             </div>
           ) : (
             /* Com Salas */
-            <div className="space-y-5">
+            <div className={layout === 'main' && selectedRoom ? "grid grid-cols-1 md:grid-cols-12 gap-6 items-start" : "space-y-5"}>
               {/* Lista de Salas em formato de Cards menores */}
-              <div className="space-y-3">
+              <div className={layout === 'main' && selectedRoom ? "hidden md:block md:col-span-4 space-y-3" : "space-y-3"}>
                 <div className="flex justify-between items-center">
                   <h4 className="text-xs font-black uppercase tracking-wider text-secondary">
                     Minhas Ligas Ativas ({rooms.length})
@@ -399,7 +432,7 @@ export default function RankingTabsClient({
                   </Link>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className={layout === 'main' && selectedRoom ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"}>
                   {rooms.map((room) => {
                     const isSelected = room.id === selectedRoomId;
                     const totalArrecadado = room.total_amount_raised || 0;
@@ -425,7 +458,7 @@ export default function RankingTabsClient({
                     return (
                       <div
                         key={room.id}
-                        onClick={() => setSelectedRoomId(room.id)}
+                        onClick={() => selectRoom(room.id)}
                         className={`p-3.5 border rounded-2xl cursor-pointer transition-all duration-200 flex flex-col justify-between gap-2.5 relative overflow-hidden group hover:translate-y-[-2px] ${
                           isSelected
                             ? room.is_winner
@@ -492,7 +525,15 @@ export default function RankingTabsClient({
               </div>
 
               {selectedRoom && (
-                <div className="space-y-5">
+                <div className={layout === 'main' && selectedRoom ? "md:col-span-8 space-y-5" : "space-y-5"}>
+                  {layout === 'main' && (
+                    <button
+                      onClick={() => selectRoom(null)}
+                      className="md:hidden w-full mb-4 h-10 flex items-center justify-center gap-1.5 border border-border-custom hover:bg-muted text-primary text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                    >
+                      &larr; Voltar para todas as salas
+                    </button>
+                  )}
                   {/* Card de Informações da Sala */}
                   <div className="bg-card border border-border-custom rounded-2xl p-4.5 space-y-4.5 shadow-lg relative overflow-hidden">
                     <div className="flex justify-between items-start gap-3">
